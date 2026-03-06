@@ -1,0 +1,28 @@
+{
+  "id": "memory-mem0-lancedb",
+  "name": "Mem0 + LanceDB Memory",
+  "description": "OpenClaw memory plugin using Mem0 as control plane and LanceDB as retrieval layer",
+  "version": "0.1.0",
+  "kind": "memory",
+  "entry": "dist/index.js",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "lancedbPath": {
+        "type": "string",
+        "default": "~/.openclaw/workspace/data/memory_lancedb"
+      },
+      "mem0BaseUrl": {
+        "type": "string",
+        "default": "https://api.mem0.ai"
+      },
+      "mem0ApiKey": {
+        "type": "string"
+      },
+      "outboxDbPath": {
+        "type": "string",
+        "default": "~/.openclaw/workspace/data/outbox.db"
+      }
+    }
+  }
+}
