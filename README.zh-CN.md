@@ -36,7 +36,13 @@ bash scripts/install.sh
           "mem0BaseUrl": "https://api.mem0.ai",
           "lancedbPath": "~/.openclaw/workspace/data/memory_lancedb",
           "outboxDbPath": "~/.openclaw/workspace/data/outbox.json",
-          "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl"
+          "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl",
+          "autoRecall": {
+            "enabled": false,
+            "topK": 5,
+            "maxChars": 800,
+            "scope": "all"
+          }
         }
       }
     }
@@ -114,6 +120,12 @@ bash scripts/install.sh
 - `synced`：Mem0 事件确认成功，且 LanceDB 可见
 - `partial`：本地写入成功，但 Mem0 不可用或未确认
 - `failed`：audit 或 LanceDB 主路径失败
+
+Auto recall：
+
+- 默认关闭
+- 开启后，如果宿主暴露兼容的 hook API，插件会在回合开始前注入格式化的 `<relevant_memories>` 块
+- 注入内容来自当前 hot plane 检索，必要时回退到 Mem0
 
 ## 开发
 

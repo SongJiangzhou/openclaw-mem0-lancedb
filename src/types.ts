@@ -42,6 +42,14 @@ export interface PluginConfig {
   mem0ApiKey: string;
   outboxDbPath: string;
   auditStorePath: string;
+  autoRecall: AutoRecallConfig;
+}
+
+export interface AutoRecallConfig {
+  enabled: boolean;
+  topK: number;
+  maxChars: number;
+  scope: 'long-term' | 'all';
 }
 
 /**

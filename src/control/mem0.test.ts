@@ -11,6 +11,7 @@ function buildConfig(): PluginConfig {
     mem0ApiKey: 'test-key',
     outboxDbPath: '/tmp/outbox.json',
     auditStorePath: '/tmp/audit.jsonl',
+    autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' },
   };
 }
 

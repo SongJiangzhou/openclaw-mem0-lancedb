@@ -36,7 +36,13 @@ Add the plugin entry to `openclaw.json`:
           "mem0BaseUrl": "https://api.mem0.ai",
           "lancedbPath": "~/.openclaw/workspace/data/memory_lancedb",
           "outboxDbPath": "~/.openclaw/workspace/data/outbox.json",
-          "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl"
+          "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl",
+          "autoRecall": {
+            "enabled": false,
+            "topK": 5,
+            "maxChars": 800,
+            "scope": "all"
+          }
         }
       }
     }
@@ -114,6 +120,12 @@ Current write status semantics:
 - `synced`: Mem0 event confirmed and LanceDB visible
 - `partial`: local write succeeded but Mem0 was unavailable or unconfirmed
 - `failed`: audit or LanceDB primary path failed
+
+Auto recall:
+
+- disabled by default
+- when enabled and the host exposes a compatible hook API, the plugin injects a formatted `<relevant_memories>` block before the turn
+- retrieval source is the current hot plane with Mem0 fallback
 
 ## Development
 

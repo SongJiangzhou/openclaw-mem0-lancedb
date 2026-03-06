@@ -17,6 +17,7 @@ test('store writes to LanceDB and is idempotent', async () => {
       mem0ApiKey: '',
       outboxDbPath,
       auditStorePath,
+      autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
     };
     const store = new MemoryStoreTool(cfg);
 

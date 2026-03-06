@@ -1,6 +1,7 @@
 import { MemorySearchTool } from './tools/search';
 import { MemoryStoreTool } from './tools/store';
 import { MemoryGetTool } from './tools/get';
+import { runAutoRecall } from './recall/auto';
 import type { PluginConfig } from './types';
 
 type OpenClawApi = {
@@ -12,6 +13,7 @@ type OpenClawApi = {
   config?: any;
   pluginConfig?: Partial<PluginConfig>;
   registerTool: (tool: any, options?: any) => void;
+  registerHook?: (name: string, handler: (...args: any[]) => any) => void;
 };
 
 function resolveConfig(raw?: Partial<PluginConfig>): PluginConfig {
@@ -21,6 +23,12 @@ function resolveConfig(raw?: Partial<PluginConfig>): PluginConfig {
     mem0ApiKey: raw?.mem0ApiKey || '',
     outboxDbPath: raw?.outboxDbPath || '~/.openclaw/workspace/data/outbox.json',
     auditStorePath: raw?.auditStorePath || '~/.openclaw/workspace/data/memory_audit/memory_records.jsonl',
+    autoRecall: {
+      enabled: raw?.autoRecall?.enabled || false,
+      topK: raw?.autoRecall?.topK || 5,
+      maxChars: raw?.autoRecall?.maxChars || 800,
+      scope: raw?.autoRecall?.scope || 'all',
+    },
   };
 }
 
@@ -127,6 +135,26 @@ export default function register(api: OpenClawApi) {
       },
     },
   );
+
+  if (cfg.autoRecall.enabled && typeof api.registerHook === 'function') {
+    api.registerHook('agent_start', async (context: any) => {
+      const latestUserMessage =
+        context?.latestUserMessage ||
+        context?.input ||
+        context?.message ||
+        '';
+      if (!latestUserMessage) {
+        return '';
+      }
+
+      return runAutoRecall({
+        query: String(latestUserMessage),
+        userId: context?.userId || 'railgun',
+        config: cfg.autoRecall,
+        search: (params) => customSearch.execute(params),
+      });
+    });
+  }
 
   api.logger?.info?.('[memory-mem0-lancedb] registered');
 }

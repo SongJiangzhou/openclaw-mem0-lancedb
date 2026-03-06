@@ -22,6 +22,32 @@
       "outboxDbPath": {
         "type": "string",
         "default": "~/.openclaw/workspace/data/outbox.db"
+      },
+      "auditStorePath": {
+        "type": "string",
+        "default": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl"
+      },
+      "autoRecall": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "topK": {
+            "type": "number",
+            "default": 5
+          },
+          "maxChars": {
+            "type": "number",
+            "default": 800
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["long-term", "all"],
+            "default": "all"
+          }
+        }
       }
     }
   }
