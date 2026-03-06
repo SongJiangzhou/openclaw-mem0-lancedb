@@ -127,6 +127,12 @@ Auto recall:
 - when enabled and the host exposes a compatible hook API, the plugin injects a formatted `<relevant_memories>` block before the turn
 - retrieval source is the current hot plane with Mem0 fallback
 
+Auto capture:
+
+- disabled by default
+- when enabled and the host exposes a compatible end-of-turn hook, the plugin submits the latest `user + assistant` turn to Mem0
+- capture uses a deterministic idempotency key per turn
+
 ## Development
 
 ***REMOVED***bash

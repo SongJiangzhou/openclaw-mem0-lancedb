@@ -48,6 +48,28 @@
             "default": "all"
           }
         }
+      },
+      "autoCapture": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["long-term", "session"],
+            "default": "long-term"
+          },
+          "requireAssistantReply": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxCharsPerMessage": {
+            "type": "number",
+            "default": 2000
+          }
+        }
       }
     }
   }

@@ -43,6 +43,7 @@ export interface PluginConfig {
   outboxDbPath: string;
   auditStorePath: string;
   autoRecall: AutoRecallConfig;
+  autoCapture: AutoCaptureConfig;
 }
 
 export interface AutoRecallConfig {
@@ -50,6 +51,13 @@ export interface AutoRecallConfig {
   topK: number;
   maxChars: number;
   scope: 'long-term' | 'all';
+}
+
+export interface AutoCaptureConfig {
+  enabled: boolean;
+  scope: 'long-term' | 'session';
+  requireAssistantReply: boolean;
+  maxCharsPerMessage: number;
 }
 
 /**

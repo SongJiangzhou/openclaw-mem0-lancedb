@@ -18,6 +18,7 @@ test('hot plane search returns canonical memory rows with filters', async () => 
       outboxDbPath: join(dir, 'outbox.json'),
       auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
       autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
+      autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
     };
     const store = new MemoryStoreTool(cfg);
     const hot = new HotMemorySearch(cfg);
@@ -64,6 +65,7 @@ test('hot plane hybrid search includes vector-only candidates through explicit f
       outboxDbPath: join(dir, 'outbox.json'),
       auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
       autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
+      autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
     };
     const store = new MemoryStoreTool(cfg);
     const hot = new HotMemorySearch(cfg);

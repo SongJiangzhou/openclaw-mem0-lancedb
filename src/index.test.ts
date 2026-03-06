@@ -33,3 +33,24 @@ test('register does not throw when auto-recall is enabled but no hook api exists
     } as any);
   });
 });
+
+test('register installs auto-capture hook when enabled and hook api exists', async () => {
+  const hooks: Array<{ name: string; handler: Function }> = [];
+
+  register({
+    pluginConfig: {
+      autoCapture: {
+        enabled: true,
+        scope: 'long-term',
+        requireAssistantReply: true,
+        maxCharsPerMessage: 2000,
+      },
+    },
+    registerTool() {},
+    registerHook(name: string, handler: Function) {
+      hooks.push({ name, handler });
+    },
+  } as any);
+
+  assert.ok(hooks.some((hook) => hook.name === 'agent_end'));
+});

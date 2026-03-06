@@ -127,6 +127,12 @@ Auto recall：
 - 开启后，如果宿主暴露兼容的 hook API，插件会在回合开始前注入格式化的 `<relevant_memories>` 块
 - 注入内容来自当前 hot plane 检索，必要时回退到 Mem0
 
+Auto capture：
+
+- 默认关闭
+- 开启后，如果宿主暴露兼容的回合结束 hook，插件会把最新一轮 `user + assistant` 提交给 Mem0
+- capture 对同一轮使用确定性的幂等键
+
 ## 开发
 
 ***REMOVED***bash

@@ -1,4 +1,5 @@
 import type { MemoryRecord, PluginConfig } from '../types';
+import type { AutoCapturePayload } from '../capture/auto';
 
 export type Mem0StoreResult =
   | { status: 'submitted'; mem0_id: string | null; event_id: string | null; hash: string | null }
@@ -11,6 +12,7 @@ export type Mem0EventResult =
 
 export interface Mem0Client {
   storeMemory(record: MemoryRecord): Promise<Mem0StoreResult>;
+  captureTurn(payload: AutoCapturePayload): Promise<Mem0StoreResult>;
   waitForEvent(eventId: string, options?: { attempts?: number; delayMs?: number }): Promise<Mem0EventResult>;
 }
 
@@ -50,6 +52,42 @@ export class HttpMem0Client implements Mem0Client {
 
     if (!response.ok) {
       throw new Error(`Mem0 sync failed: ${response.status}`);
+    }
+
+    const data: any = await response.json();
+    return {
+      status: 'submitted',
+      mem0_id: data.id || data.mem0_id || null,
+      event_id: data.event_id || data.id || null,
+      hash: data.hash || null,
+    };
+  }
+
+  async captureTurn(payload: AutoCapturePayload): Promise<Mem0StoreResult> {
+    if (!this.config.mem0ApiKey) {
+      return { status: 'unavailable' };
+    }
+
+    const response = await this.fetchImpl(`${this.config.mem0BaseUrl}/v1/memories/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Token ${this.config.mem0ApiKey}`,
+      },
+      body: JSON.stringify({
+        messages: payload.messages,
+        user_id: payload.userId,
+        run_id: payload.runId || undefined,
+        metadata: {
+          idempotency_key: payload.idempotencyKey,
+          scope: payload.scope,
+          source: 'auto-capture',
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Mem0 capture failed: ${response.status}`);
     }
 
     const data: any = await response.json();
@@ -108,6 +146,10 @@ export class FakeMem0Client implements Mem0Client {
   }
 
   async storeMemory(_record: MemoryRecord): Promise<Mem0StoreResult> {
+    return this.storeResult;
+  }
+
+  async captureTurn(_payload: AutoCapturePayload): Promise<Mem0StoreResult> {
     return this.storeResult;
   }
 

@@ -18,6 +18,7 @@ test('store/search works with local fallback when mem0ApiKey is missing', async 
       outboxDbPath: join(dir, 'outbox.json'),
       auditStorePath,
       autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
+      autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
     };
 
     const store = new MemoryStoreTool(cfg);

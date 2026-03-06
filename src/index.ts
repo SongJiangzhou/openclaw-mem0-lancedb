@@ -1,6 +1,8 @@
 import { MemorySearchTool } from './tools/search';
 import { MemoryStoreTool } from './tools/store';
 import { MemoryGetTool } from './tools/get';
+import { buildAutoCapturePayload } from './capture/auto';
+import { HttpMem0Client } from './control/mem0';
 import { runAutoRecall } from './recall/auto';
 import type { PluginConfig } from './types';
 
@@ -28,6 +30,12 @@ function resolveConfig(raw?: Partial<PluginConfig>): PluginConfig {
       topK: raw?.autoRecall?.topK || 5,
       maxChars: raw?.autoRecall?.maxChars || 800,
       scope: raw?.autoRecall?.scope || 'all',
+    },
+    autoCapture: {
+      enabled: raw?.autoCapture?.enabled || false,
+      scope: raw?.autoCapture?.scope || 'long-term',
+      requireAssistantReply: raw?.autoCapture?.requireAssistantReply ?? true,
+      maxCharsPerMessage: raw?.autoCapture?.maxCharsPerMessage || 2000,
     },
   };
 }
@@ -153,6 +161,30 @@ export default function register(api: OpenClawApi) {
         config: cfg.autoRecall,
         search: (params) => customSearch.execute(params),
       });
+    });
+  }
+
+  if (cfg.autoCapture.enabled && typeof api.registerHook === 'function') {
+    api.registerHook('agent_end', async (context: any) => {
+      const payload = buildAutoCapturePayload({
+        userId: context?.userId || 'railgun',
+        runId: context?.runId || null,
+        latestUserMessage: context?.latestUserMessage || '',
+        latestAssistantMessage: context?.latestAssistantMessage || '',
+        config: cfg.autoCapture,
+      });
+      if (!payload) {
+        return null;
+      }
+
+      const mem0Client = new HttpMem0Client(cfg);
+      const submitted = await mem0Client.captureTurn(payload);
+      if (submitted.status === 'submitted' && submitted.event_id) {
+        const confirmation = await mem0Client.waitForEvent(submitted.event_id, { attempts: 2, delayMs: 0 });
+        return { submitted, confirmation };
+      }
+
+      return { submitted };
     });
   }
 

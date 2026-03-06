@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { HttpMem0Client } from './mem0';
+import { buildAutoCapturePayload } from '../capture/auto';
 import type { MemoryRecord, PluginConfig } from '../types';
 
 function buildConfig(): PluginConfig {
@@ -12,6 +13,7 @@ function buildConfig(): PluginConfig {
     outboxDbPath: '/tmp/outbox.json',
     auditStorePath: '/tmp/audit.jsonl',
     autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' },
+    autoCapture: { enabled: false, scope: 'long-term', requireAssistantReply: true, maxCharsPerMessage: 2000 },
   };
 }
 
@@ -115,4 +117,34 @@ test('http mem0 client times out when event confirmation does not arrive', async
   const confirmed = await client.waitForEvent(submitted.event_id || '', { attempts: 2, delayMs: 0 });
 
   assert.equal(confirmed.status, 'timeout');
+});
+
+test('http mem0 client submits capture payload with messages', async () => {
+  let capturedBody = '';
+  const fetchStub = (async (_input: string | URL | Request, init?: RequestInit) => {
+    capturedBody = String(init?.body || '');
+    return {
+      ok: true,
+      json: async () => ({ id: 'capture-1', event_id: 'evt-capture', hash: 'h1' }),
+    };
+  }) as unknown as typeof fetch;
+  const client = new HttpMem0Client(buildConfig(), fetchStub);
+  const payload = buildAutoCapturePayload({
+    userId: 'railgun',
+    latestUserMessage: '用户要求以后都用中文回复',
+    latestAssistantMessage: '好的，之后我会使用中文回复。',
+    config: {
+      enabled: true,
+      scope: 'long-term',
+      requireAssistantReply: true,
+      maxCharsPerMessage: 2000,
+    },
+  });
+
+  assert.ok(payload);
+  const result = await client.captureTurn(payload!);
+
+  assert.equal(result.status, 'submitted');
+  assert.match(capturedBody, /"messages"/);
+  assert.match(capturedBody, /用户要求以后都用中文回复/);
 });
