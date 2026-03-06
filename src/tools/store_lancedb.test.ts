@@ -10,14 +10,23 @@ test('store writes to LanceDB and is idempotent', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ldb-store-'));
   try {
     const outboxDbPath = join(dir, 'outbox.json');
-    const cfg = { lancedbPath: dir, mem0BaseUrl: '', mem0ApiKey: '', outboxDbPath };
+    const auditStorePath = join(dir, 'audit', 'memory_records.jsonl');
+    const cfg = {
+      lancedbPath: dir,
+      mem0BaseUrl: '',
+      mem0ApiKey: '',
+      outboxDbPath,
+      auditStorePath,
+    };
     const store = new MemoryStoreTool(cfg);
 
     const r1 = await store.execute({ text: '用户偏好：中文回复', userId: 'railgun', scope: 'long-term', categories: ['preference'] });
     assert.equal(r1.success, true);
+    assert.equal(r1.syncStatus, 'partial');
 
     // 幂等：同一条写两次，LanceDB 里只应有一条
-    await store.execute({ text: '用户偏好：中文回复', userId: 'railgun', scope: 'long-term', categories: ['preference'] });
+    const r2 = await store.execute({ text: '用户偏好：中文回复', userId: 'railgun', scope: 'long-term', categories: ['preference'] });
+    assert.equal(r2.syncStatus, 'partial');
 
     const tbl = await openMemoryTable(dir);
     const rows = await tbl.query().where(`user_id = 'railgun'`).toArray();
@@ -29,6 +38,9 @@ test('store writes to LanceDB and is idempotent', async () => {
     assert.ok(outbox.items.length >= 2);
     assert.equal(outbox.items[0]?.status, 'done');
     assert.equal(outbox.items[1]?.status, 'done');
+
+    const auditLines = readFileSync(auditStorePath, 'utf-8').trim().split('\n').filter(Boolean);
+    assert.ok(auditLines.length >= 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -13,6 +13,8 @@ export interface MemoryRow {
   status: string;        // active | superseded | deleted
   sensitivity: string;   // public | internal | confidential | restricted
   openclaw_refs: string; // JSON object string
+  mem0_id: string;
   mem0_event_id: string;
   mem0_hash: string;
+  lancedb_row_key: string;
 }

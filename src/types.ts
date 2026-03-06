@@ -41,6 +41,7 @@ export interface PluginConfig {
   mem0BaseUrl: string;
   mem0ApiKey: string;
   outboxDbPath: string;
+  auditStorePath: string;
 }
 
 /**
@@ -83,6 +84,7 @@ export interface StoreResult {
   success: boolean;
   memoryUid?: string;
   eventId?: string;
+  syncStatus?: MemorySyncStatus;
   error?: string;
 }
 
@@ -119,7 +121,7 @@ export interface MemorySyncPayload {
   };
 }
 
-export type MemorySyncStatus = 'done' | 'duplicate' | 'no_pending' | 'failed_visibility';
+export type MemorySyncStatus = 'accepted' | 'synced' | 'partial' | 'failed' | 'duplicate';
 
 export interface MemorySyncResult {
   status: MemorySyncStatus;

@@ -7,4 +7,4 @@
 - `src/bridge/adapter.ts`
 - `src/bridge/sync-engine.ts`
 
-本目录仅保留 schema 参考文件；插件运行时不再依赖 Python bridge。
+本目录不再保存 canonical schema；统一 schema 已迁移到 `src/schema/memory_record.schema.json`。

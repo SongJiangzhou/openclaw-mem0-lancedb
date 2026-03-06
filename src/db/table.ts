@@ -29,8 +29,10 @@ export async function openMemoryTable(dbPath: string) {
     status: 'deleted',
     sensitivity: 'internal',
     openclaw_refs: '{}',
+    mem0_id: '',
     mem0_event_id: '',
     mem0_hash: '',
+    lancedb_row_key: '',
   }]);
 
   // 删掉占位记录

@@ -4,6 +4,13 @@
 
 An OpenClaw memory plugin that uses Mem0 as the control plane and LanceDB as the retrieval layer.
 
+Current embedded architecture:
+
+- `audit plane`: file-first audit log under `auditStorePath`
+- `control plane`: Mem0 client and sync state
+- `hot plane`: LanceDB search index
+- Canonical schema: `src/schema/memory_record.schema.json`
+
 ## Installation
 
 ***REMOVED***bash
@@ -28,7 +35,8 @@ Add the plugin entry to `openclaw.json`:
           "mem0ApiKey": "your-mem0-api-key (optional; leave empty for local-only mode)",
           "mem0BaseUrl": "https://api.mem0.ai",
           "lancedbPath": "~/.openclaw/workspace/data/memory_lancedb",
-          "outboxDbPath": "~/.openclaw/workspace/data/outbox.json"
+          "outboxDbPath": "~/.openclaw/workspace/data/outbox.json",
+          "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl"
         }
       }
     }
@@ -97,8 +105,9 @@ Stores a memory record and syncs it to LanceDB, optionally via Mem0.
 
 ## Architecture
 
-1. Write path: Agent -> `memoryStore` -> TypeScript bridge (`uid` + `outbox` + `sync-engine`) -> LanceDB, with optional Mem0 event creation first
-2. Read path: Agent -> `memory_search` / `memorySearch` -> LanceDB first -> Mem0 fallback
+1. Write path: Agent -> `memoryStore` -> audit plane -> outbox / sync-engine -> Mem0 control plane + LanceDB hot plane
+2. Read path: Agent -> `memory_search` / `memorySearch` -> LanceDB hot plane first -> Mem0 fallback
+3. Retrieval source of truth for humans: audit records stored through the file-first plane
 
 ## Development
 

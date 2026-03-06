@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { FileAuditStore } from '../audit/store';
+import { FakeMem0Client } from '../control/mem0';
 import { FileOutbox } from './outbox';
 import { InMemoryMemoryAdapter } from './adapter';
 import { MemorySyncEngine } from './sync-engine';
@@ -23,17 +25,19 @@ function createMemory() {
   };
 }
 
-test('sync engine stores memory and marks outbox item done', async () => {
+test('sync engine returns accepted when audit write succeeds and processing is deferred', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sync-engine-'));
 
   try {
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const engine = new MemorySyncEngine(outbox, adapter);
+    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
+    const mem0 = new FakeMem0Client({ status: 'unavailable' });
+    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0, { processInline: false });
 
     const result = await engine.processEvent('evt-1', createMemory());
 
-    assert.equal(result.status, 'done');
+    assert.equal(result.status, 'accepted');
     assert.ok(result.memory_uid);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -46,13 +50,15 @@ test('sync engine returns duplicate when the same event is replayed', async () =
   try {
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const engine = new MemorySyncEngine(outbox, adapter);
+    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
+    const mem0 = new FakeMem0Client({ status: 'synced', mem0_id: 'm1', event_id: 'evt-dup', hash: 'h1' });
+    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0);
     const memory = createMemory();
 
     const first = await engine.processEvent('evt-dup', memory);
     const second = await engine.processEvent('evt-dup', memory);
 
-    assert.equal(first.status, 'done');
+    assert.equal(first.status, 'synced');
     assert.equal(second.status, 'duplicate');
     assert.equal(first.memory_uid, second.memory_uid);
   } finally {
@@ -60,17 +66,37 @@ test('sync engine returns duplicate when the same event is replayed', async () =
   }
 });
 
-test('sync engine marks failed when adapter write is not visible', async () => {
+test('sync engine returns partial when lance succeeds but mem0 is unavailable', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sync-engine-'));
 
   try {
-    const adapter = new InMemoryMemoryAdapter({ visible: false });
+    const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const engine = new MemorySyncEngine(outbox, adapter);
+    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
+    const mem0 = new FakeMem0Client({ status: 'unavailable' });
+    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0);
 
     const result = await engine.processEvent('evt-fail', createMemory());
 
-    assert.equal(result.status, 'failed_visibility');
+    assert.equal(result.status, 'partial');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync engine returns synced when audit, mem0 and lance all succeed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sync-engine-'));
+
+  try {
+    const adapter = new InMemoryMemoryAdapter();
+    const outbox = new FileOutbox(join(dir, 'outbox.json'));
+    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
+    const mem0 = new FakeMem0Client({ status: 'synced', mem0_id: 'm1', event_id: 'evt-ok', hash: 'h1' });
+    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0);
+
+    const result = await engine.processEvent('evt-ok', createMemory());
+
+    assert.equal(result.status, 'synced');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -4,6 +4,13 @@
 
 这是一个 OpenClaw 记忆插件，使用 Mem0 作为控制面，使用 LanceDB 作为检索层。
 
+当前采用单插件内嵌式三平面架构：
+
+- `audit plane`：基于 `auditStorePath` 的 file-first 审计记录
+- `control plane`：Mem0 client 与同步状态
+- `hot plane`：LanceDB 检索热面
+- 统一 schema：`src/schema/memory_record.schema.json`
+
 ## 安装
 
 ***REMOVED***bash
@@ -28,7 +35,8 @@ bash scripts/install.sh
           "mem0ApiKey": "your-mem0-api-key（可选，留空则为纯本地模式）",
           "mem0BaseUrl": "https://api.mem0.ai",
           "lancedbPath": "~/.openclaw/workspace/data/memory_lancedb",
-          "outboxDbPath": "~/.openclaw/workspace/data/outbox.json"
+          "outboxDbPath": "~/.openclaw/workspace/data/outbox.json",
+          "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl"
         }
       }
     }
@@ -97,8 +105,9 @@ bash scripts/install.sh
 
 ## 架构
 
-1. 写入链路：Agent -> `memoryStore` -> TypeScript bridge（`uid` + `outbox` + `sync-engine`）-> LanceDB；如配置 Mem0，会先创建 Mem0 事件
-2. 读取链路：Agent -> `memory_search` / `memorySearch` -> 优先 LanceDB -> 回退 Mem0
+1. 写入链路：Agent -> `memoryStore` -> audit plane -> outbox / sync-engine -> Mem0 控制面 + LanceDB 检索热面
+2. 读取链路：Agent -> `memory_search` / `memorySearch` -> 优先 LanceDB hot plane -> 回退 Mem0
+3. 面向人工审计的真相源：通过 file-first 审计面保存的记录
 
 ## 开发
 

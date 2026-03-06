@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openclaw.local/schemas/memory-record.json",
+  "title": "MemoryRecord",
+  "type": "object",
+  "required": ["memory_uid", "user_id", "scope", "text", "ts_event", "status"],
+  "properties": {
+    "memory_uid": { "type": "string" },
+    "user_id": { "type": "string" },
+    "run_id": { "type": ["string", "null"] },
+    "scope": { "type": "string", "enum": ["long-term", "session"] },
+    "text": { "type": "string" },
+    "categories": { "type": "array", "items": { "type": "string" } },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "ts_event": { "type": "string", "format": "date-time" },
+    "ts_ingest": { "type": "string", "format": "date-time" },
+    "source": { "type": "string", "enum": ["openclaw"] },
+    "openclaw_refs": {
+      "type": "object",
+      "properties": {
+        "workspace_path": { "type": ["string", "null"] },
+        "file_path": { "type": ["string", "null"] },
+        "line_start": { "type": ["integer", "null"] },
+        "line_end": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "mem0": {
+      "type": "object",
+      "properties": {
+        "mem0_id": { "type": ["string", "null"] },
+        "hash": { "type": ["string", "null"] },
+        "event_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "lancedb": {
+      "type": "object",
+      "properties": {
+        "table": { "type": ["string", "null"] },
+        "row_key": { "type": ["string", "null"] },
+        "vector_dim": { "type": ["integer", "null"] },
+        "index_version": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "status": { "type": "string", "enum": ["active", "superseded", "deleted"] },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["public", "internal", "confidential", "restricted"]
+    }
+  },
+  "additionalProperties": false
+}

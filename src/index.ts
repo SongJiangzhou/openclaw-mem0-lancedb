@@ -20,6 +20,7 @@ function resolveConfig(raw?: Partial<PluginConfig>): PluginConfig {
     mem0BaseUrl: raw?.mem0BaseUrl || 'https://api.mem0.ai',
     mem0ApiKey: raw?.mem0ApiKey || '',
     outboxDbPath: raw?.outboxDbPath || '~/.openclaw/workspace/data/outbox.json',
+    auditStorePath: raw?.auditStorePath || '~/.openclaw/workspace/data/memory_audit/memory_records.jsonl',
   };
 }
 

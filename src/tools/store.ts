@@ -1,8 +1,10 @@
 import * as crypto from 'node:crypto';
 
+import { FileAuditStore } from '../audit/store';
 import { LanceDbMemoryAdapter } from '../bridge/adapter';
 import { FileOutbox } from '../bridge/outbox';
 import { MemorySyncEngine } from '../bridge/sync-engine';
+import { HttpMem0Client } from '../control/mem0';
 import type { MemorySyncPayload, PluginConfig, StoreParams, StoreResult } from '../types';
 
 export class MemoryStoreTool {
@@ -16,17 +18,12 @@ export class MemoryStoreTool {
     const { text, userId, scope = 'long-term', metadata = {}, categories = [] } = params;
 
     try {
-      const mem0EventId = await this.storeToMem0IfConfigured({
-        text,
-        userId,
-        scope,
-        metadata,
-        categories,
-      });
-      const eventId = mem0EventId || `local-${crypto.randomUUID()}`;
+      const eventId = `local-${crypto.randomUUID()}`;
       const outbox = new FileOutbox(this.config.outboxDbPath);
+      const auditStore = new FileAuditStore(this.config.auditStorePath);
       const adapter = new LanceDbMemoryAdapter(this.config.lancedbPath);
-      const engine = new MemorySyncEngine(outbox, adapter);
+      const mem0Client = new HttpMem0Client(this.config);
+      const engine = new MemorySyncEngine(outbox, auditStore, adapter, mem0Client);
       const payload = this.buildPayload({
         text,
         userId,
@@ -37,11 +34,11 @@ export class MemoryStoreTool {
       });
       const result = await engine.processEvent(eventId, payload);
 
-      if (result.status === 'done' || result.status === 'duplicate') {
-        return { success: true, memoryUid: result.memory_uid, eventId };
+      if (result.status === 'synced' || result.status === 'partial' || result.status === 'accepted' || result.status === 'duplicate') {
+        return { success: true, memoryUid: result.memory_uid, eventId, syncStatus: result.status };
       }
 
-      return { success: false, memoryUid: result.memory_uid, eventId, error: result.status };
+      return { success: false, memoryUid: result.memory_uid, eventId, syncStatus: result.status, error: result.status };
     } catch (err: any) {
       console.error('[memoryStore] Failed:', err);
       return { success: false, error: err.message || 'Unknown error' };
@@ -69,47 +66,10 @@ export class MemoryStoreTool {
       sensitivity: params.metadata.sensitivity || 'internal',
       openclaw_refs: params.metadata.openclaw_refs || {},
       mem0: {
-        event_id: params.eventId,
+        event_id: null,
         hash: params.metadata.mem0_hash || null,
         mem0_id: params.metadata.mem0_id || null,
       },
     };
-  }
-
-  private async storeToMem0IfConfigured(params: {
-    text: string;
-    userId: string;
-    scope: string;
-    metadata: Record<string, any>;
-    categories: string[];
-  }): Promise<string | null> {
-    if (!this.config.mem0ApiKey) {
-      return null;
-    }
-
-    const url = `${this.config.mem0BaseUrl}/v1/memories/`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Token ${this.config.mem0ApiKey}`,
-      },
-      body: JSON.stringify({
-        messages: [{ role: 'user', content: params.text }],
-        user_id: params.userId,
-        metadata: {
-          ...params.metadata,
-          scope: params.scope,
-          categories: params.categories,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Mem0 store failed: ${response.status}`);
-    }
-
-    const data: any = await response.json();
-    return data.id || data.event_id || null;
   }
 }

@@ -74,7 +74,9 @@ function toLanceRow(record: MemoryAdapterRecord): Record<string, string> {
     status: memory.status,
     sensitivity: memory.sensitivity || 'internal',
     openclaw_refs: JSON.stringify(memory.openclaw_refs || {}),
+    mem0_id: memory.mem0?.mem0_id || '',
     mem0_event_id: memory.mem0?.event_id || '',
     mem0_hash: memory.mem0?.hash || '',
+    lancedb_row_key: record.memory_uid,
   };
 }
