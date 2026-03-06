@@ -60,14 +60,17 @@ export class MemorySyncEngine {
       return { status: 'failed', memory_uid: memoryUid };
     }
 
-    const mem0 = await this.mem0Client.syncMemory(record);
+    const mem0Store = await this.mem0Client.storeMemory(record);
+    const mem0Event = mem0Store.status === 'submitted' && mem0Store.event_id
+      ? await this.mem0Client.waitForEvent(mem0Store.event_id, { attempts: 2, delayMs: 0 })
+      : { status: 'unavailable' as const };
     const withControlPlane: MemorySyncPayload = {
       ...memory,
-      mem0: mem0.status === 'synced'
+      mem0: mem0Store.status === 'submitted'
         ? {
-            mem0_id: mem0.mem0_id,
-            event_id: mem0.event_id,
-            hash: mem0.hash,
+            mem0_id: mem0Store.mem0_id,
+            event_id: mem0Store.event_id,
+            hash: mem0Store.hash,
           }
         : memory.mem0,
     };
@@ -81,7 +84,7 @@ export class MemorySyncEngine {
 
     await this.outbox.markDone(item.id);
     return {
-      status: mem0.status === 'synced' ? 'synced' : 'partial',
+      status: mem0Store.status === 'submitted' && mem0Event.status === 'confirmed' ? 'synced' : 'partial',
       memory_uid: memoryUid,
     };
   }

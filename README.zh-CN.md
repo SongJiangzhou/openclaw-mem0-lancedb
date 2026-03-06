@@ -109,6 +109,12 @@ bash scripts/install.sh
 2. 读取链路：Agent -> `memory_search` / `memorySearch` -> 优先 LanceDB hot plane（FTS + vector + hybrid RRF）-> 回退 Mem0
 3. 面向人工审计的真相源：通过 file-first 审计面保存的记录
 
+当前写入状态语义：
+
+- `synced`：Mem0 事件确认成功，且 LanceDB 可见
+- `partial`：本地写入成功，但 Mem0 不可用或未确认
+- `failed`：audit 或 LanceDB 主路径失败
+
 ## 开发
 
 ***REMOVED***bash

@@ -1,11 +1,17 @@
 import type { MemoryRecord, PluginConfig } from '../types';
 
-export type Mem0SyncResult =
-  | { status: 'synced'; mem0_id: string | null; event_id: string | null; hash: string | null }
+export type Mem0StoreResult =
+  | { status: 'submitted'; mem0_id: string | null; event_id: string | null; hash: string | null }
+  | { status: 'unavailable' };
+
+export type Mem0EventResult =
+  | { status: 'confirmed' }
+  | { status: 'timeout' }
   | { status: 'unavailable' };
 
 export interface Mem0Client {
-  syncMemory(record: MemoryRecord): Promise<Mem0SyncResult>;
+  storeMemory(record: MemoryRecord): Promise<Mem0StoreResult>;
+  waitForEvent(eventId: string, options?: { attempts?: number; delayMs?: number }): Promise<Mem0EventResult>;
 }
 
 export class HttpMem0Client implements Mem0Client {
@@ -17,7 +23,7 @@ export class HttpMem0Client implements Mem0Client {
     this.fetchImpl = fetchImpl;
   }
 
-  async syncMemory(record: MemoryRecord): Promise<Mem0SyncResult> {
+  async storeMemory(record: MemoryRecord): Promise<Mem0StoreResult> {
     if (!this.config.mem0ApiKey) {
       return { status: 'unavailable' };
     }
@@ -48,22 +54,64 @@ export class HttpMem0Client implements Mem0Client {
 
     const data: any = await response.json();
     return {
-      status: 'synced',
+      status: 'submitted',
       mem0_id: data.id || data.mem0_id || null,
       event_id: data.event_id || data.id || null,
       hash: data.hash || null,
     };
   }
+
+  async waitForEvent(eventId: string, options?: { attempts?: number; delayMs?: number }): Promise<Mem0EventResult> {
+    if (!this.config.mem0ApiKey) {
+      return { status: 'unavailable' };
+    }
+
+    const attempts = options?.attempts ?? 3;
+    const delayMs = options?.delayMs ?? 25;
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const response = await this.fetchImpl(`${this.config.mem0BaseUrl}/v1/events/${eventId}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Token ${this.config.mem0ApiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Mem0 event confirm failed: ${response.status}`);
+      }
+
+      const data: any = await response.json();
+      if (String(data.status || '').toLowerCase() === 'completed') {
+        return { status: 'confirmed' };
+      }
+
+      if (delayMs > 0 && attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    return { status: 'timeout' };
+  }
 }
 
 export class FakeMem0Client implements Mem0Client {
-  private readonly result: Mem0SyncResult;
+  private readonly storeResult: Mem0StoreResult;
+  private readonly eventResult: Mem0EventResult;
 
-  constructor(result: Mem0SyncResult) {
-    this.result = result;
+  constructor(
+    storeResult: Mem0StoreResult = { status: 'unavailable' },
+    eventResult: Mem0EventResult = { status: 'unavailable' },
+  ) {
+    this.storeResult = storeResult;
+    this.eventResult = eventResult;
   }
 
-  async syncMemory(_record: MemoryRecord): Promise<Mem0SyncResult> {
-    return this.result;
+  async storeMemory(_record: MemoryRecord): Promise<Mem0StoreResult> {
+    return this.storeResult;
+  }
+
+  async waitForEvent(_eventId: string, _options?: { attempts?: number; delayMs?: number }): Promise<Mem0EventResult> {
+    return this.eventResult;
   }
 }

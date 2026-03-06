@@ -109,6 +109,12 @@ Stores a memory record and syncs it to LanceDB, optionally via Mem0.
 2. Read path: Agent -> `memory_search` / `memorySearch` -> LanceDB hot plane (FTS + vector + hybrid RRF) first -> Mem0 fallback
 3. Retrieval source of truth for humans: audit records stored through the file-first plane
 
+Current write status semantics:
+
+- `synced`: Mem0 event confirmed and LanceDB visible
+- `partial`: local write succeeded but Mem0 was unavailable or unconfirmed
+- `failed`: audit or LanceDB primary path failed
+
 ## Development
 
 ***REMOVED***bash
