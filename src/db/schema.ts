@@ -17,4 +17,5 @@ export interface MemoryRow {
   mem0_event_id: string;
   mem0_hash: string;
   lancedb_row_key: string;
+  vector: number[];
 }

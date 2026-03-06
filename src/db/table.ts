@@ -2,6 +2,7 @@ import * as lancedb from '@lancedb/lancedb';
 import { MEMORY_TABLE } from './schema';
 import * as os from 'os';
 import * as path from 'path';
+import { EMBEDDING_DIM } from '../hot/embedder';
 
 export async function openMemoryTable(dbPath: string) {
   const resolvedPath = dbPath.startsWith('~/')
@@ -33,6 +34,7 @@ export async function openMemoryTable(dbPath: string) {
     mem0_event_id: '',
     mem0_hash: '',
     lancedb_row_key: '',
+    vector: new Array<number>(EMBEDDING_DIM).fill(0),
   }]);
 
   // 删掉占位记录

@@ -31,6 +31,8 @@ test('store writes to LanceDB and is idempotent', async () => {
     const tbl = await openMemoryTable(dir);
     const rows = await tbl.query().where(`user_id = 'railgun'`).toArray();
     assert.equal(rows.length, 1, `expected 1 row, got ${rows.length}`);
+    assert.ok(rows[0]?.vector && typeof rows[0].vector.length === 'number', 'expected stored vector-like field');
+    assert.equal(rows[0]?.vector.length, 16);
 
     const outbox = JSON.parse(readFileSync(outboxDbPath, 'utf-8')) as {
       items: Array<{ status: string }>;

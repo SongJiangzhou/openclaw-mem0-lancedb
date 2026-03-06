@@ -8,7 +8,7 @@ Current embedded architecture:
 
 - `audit plane`: file-first audit log under `auditStorePath`
 - `control plane`: Mem0 client and sync state
-- `hot plane`: LanceDB search index
+- `hot plane`: LanceDB FTS + vector + hybrid RRF retrieval
 - Canonical schema: `src/schema/memory_record.schema.json`
 
 ## Installation
@@ -106,7 +106,7 @@ Stores a memory record and syncs it to LanceDB, optionally via Mem0.
 ## Architecture
 
 1. Write path: Agent -> `memoryStore` -> audit plane -> outbox / sync-engine -> Mem0 control plane + LanceDB hot plane
-2. Read path: Agent -> `memory_search` / `memorySearch` -> LanceDB hot plane first -> Mem0 fallback
+2. Read path: Agent -> `memory_search` / `memorySearch` -> LanceDB hot plane (FTS + vector + hybrid RRF) first -> Mem0 fallback
 3. Retrieval source of truth for humans: audit records stored through the file-first plane
 
 ## Development

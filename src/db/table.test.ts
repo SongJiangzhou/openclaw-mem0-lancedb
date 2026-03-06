@@ -23,6 +23,7 @@ test('openMemoryTable creates table with correct schema', async () => {
     assert.ok(fieldNames.includes('mem0_id'), 'missing mem0_id');
     assert.ok(fieldNames.includes('mem0_event_id'), 'missing mem0_event_id');
     assert.ok(fieldNames.includes('lancedb_row_key'), 'missing lancedb_row_key');
+    assert.ok(fieldNames.includes('vector'), 'missing vector');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

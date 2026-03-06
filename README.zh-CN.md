@@ -8,7 +8,7 @@
 
 - `audit plane`：基于 `auditStorePath` 的 file-first 审计记录
 - `control plane`：Mem0 client 与同步状态
-- `hot plane`：LanceDB 检索热面
+- `hot plane`：LanceDB FTS + vector + hybrid RRF 检索热面
 - 统一 schema：`src/schema/memory_record.schema.json`
 
 ## 安装
@@ -106,7 +106,7 @@ bash scripts/install.sh
 ## 架构
 
 1. 写入链路：Agent -> `memoryStore` -> audit plane -> outbox / sync-engine -> Mem0 控制面 + LanceDB 检索热面
-2. 读取链路：Agent -> `memory_search` / `memorySearch` -> 优先 LanceDB hot plane -> 回退 Mem0
+2. 读取链路：Agent -> `memory_search` / `memorySearch` -> 优先 LanceDB hot plane（FTS + vector + hybrid RRF）-> 回退 Mem0
 3. 面向人工审计的真相源：通过 file-first 审计面保存的记录
 
 ## 开发

@@ -1,4 +1,6 @@
 import { openMemoryTable } from '../db/table';
+import type { MemoryRow } from '../db/schema';
+import { embedText } from '../hot/embedder';
 import type { MemorySyncPayload } from '../types';
 
 export interface MemoryAdapterRecord {
@@ -48,7 +50,7 @@ export class LanceDbMemoryAdapter implements MemoryAdapter {
       await table.delete(`memory_uid = '${row.memory_uid}'`);
     }
 
-    await table.add([row]);
+    await table.add([row as unknown as Record<string, unknown>]);
   }
 
   async exists(memoryUid: string): Promise<boolean> {
@@ -58,7 +60,7 @@ export class LanceDbMemoryAdapter implements MemoryAdapter {
   }
 }
 
-function toLanceRow(record: MemoryAdapterRecord): Record<string, string> {
+function toLanceRow(record: MemoryAdapterRecord): MemoryRow {
   const memory = record.memory;
 
   return {
@@ -78,5 +80,6 @@ function toLanceRow(record: MemoryAdapterRecord): Record<string, string> {
     mem0_event_id: memory.mem0?.event_id || '',
     mem0_hash: memory.mem0?.hash || '',
     lancedb_row_key: record.memory_uid,
+    vector: embedText(memory.text),
   };
 }
