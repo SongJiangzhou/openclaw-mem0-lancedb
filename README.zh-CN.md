@@ -132,6 +132,7 @@ Auto capture：
 - 默认关闭
 - 开启后，如果宿主暴露兼容的回合结束 hook，插件会把最新一轮 `user + assistant` 提交给 Mem0
 - capture 对同一轮使用确定性的幂等键
+- 在 Mem0 确认 capture 事件后，抽取出的 memories 会同步回本地 audit plane 和 LanceDB hot plane
 
 ## 开发
 

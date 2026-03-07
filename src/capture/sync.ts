@@ -1,0 +1,107 @@
+import { buildMemoryUid } from '../bridge/uid';
+import type { MemoryAdapter } from '../bridge/adapter';
+import type { Mem0ExtractedMemory } from '../control/mem0';
+import { FileAuditStore } from '../audit/store';
+import type { MemoryRecord, MemorySyncPayload } from '../types';
+
+const CAPTURE_UID_BUCKET = '1970-01-01T00';
+
+export async function syncCapturedMemories(params: {
+  memories: Mem0ExtractedMemory[];
+  userId: string;
+  runId?: string | null;
+  scope: 'long-term' | 'session';
+  eventId: string;
+  auditStore: FileAuditStore;
+  adapter: MemoryAdapter;
+  tsEvent?: string;
+}): Promise<{ synced: number; memoryUids: string[] }> {
+  const tsEvent = params.tsEvent || new Date().toISOString();
+  const existingUids = new Set((await params.auditStore.readAll()).map((record) => record.memory_uid));
+  const memoryUids: string[] = [];
+  let synced = 0;
+
+  for (const memory of params.memories) {
+    const memoryPayload = toMemoryPayload(memory, params, tsEvent);
+    const category = (memoryPayload.categories || ['general'])[0];
+    const memoryUid = buildMemoryUid(
+      memoryPayload.user_id,
+      memoryPayload.scope,
+      memoryPayload.text,
+      CAPTURE_UID_BUCKET,
+      category,
+    );
+    memoryUids.push(memoryUid);
+
+    if (existingUids.has(memoryUid) || (await params.adapter.exists(memoryUid))) {
+      continue;
+    }
+
+    const record = toRecord(memoryUid, memoryPayload);
+    await params.auditStore.append(record);
+    await params.adapter.upsertMemory({
+      memory_uid: memoryUid,
+      memory: memoryPayload,
+    });
+    existingUids.add(memoryUid);
+    synced += 1;
+  }
+
+  return { synced, memoryUids };
+}
+
+function toMemoryPayload(
+  memory: Mem0ExtractedMemory,
+  params: {
+    userId: string;
+    runId?: string | null;
+    scope: 'long-term' | 'session';
+    eventId: string;
+  },
+  tsEvent: string,
+): MemorySyncPayload {
+  return {
+    user_id: params.userId,
+    run_id: params.runId || null,
+    scope: params.scope,
+    text: memory.text,
+    categories: memory.categories,
+    tags: [],
+    ts_event: tsEvent,
+    source: 'openclaw',
+    status: 'active',
+    sensitivity: 'internal',
+    openclaw_refs: {
+      file_path: 'AUTO_CAPTURE',
+    },
+    mem0: {
+      mem0_id: memory.id,
+      event_id: params.eventId,
+      hash: memory.hash,
+    },
+  };
+}
+
+function toRecord(memoryUid: string, memory: MemorySyncPayload): MemoryRecord {
+  return {
+    memory_uid: memoryUid,
+    user_id: memory.user_id,
+    run_id: memory.run_id || null,
+    scope: memory.scope,
+    text: memory.text,
+    categories: memory.categories || [],
+    tags: memory.tags || [],
+    ts_event: memory.ts_event,
+    source: memory.source,
+    status: memory.status,
+    sensitivity: memory.sensitivity || 'internal',
+    openclaw_refs: memory.openclaw_refs || {},
+    mem0: memory.mem0 || {},
+    lancedb: {
+      table: 'memory_records',
+      row_key: memoryUid,
+      vector_dim: null,
+      index_version: null,
+    },
+  };
+}

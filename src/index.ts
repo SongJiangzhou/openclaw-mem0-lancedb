@@ -1,7 +1,10 @@
+import { FileAuditStore } from './audit/store';
+import { LanceDbMemoryAdapter } from './bridge/adapter';
 import { MemorySearchTool } from './tools/search';
 import { MemoryStoreTool } from './tools/store';
 import { MemoryGetTool } from './tools/get';
 import { buildAutoCapturePayload } from './capture/auto';
+import { syncCapturedMemories } from './capture/sync';
 import { HttpMem0Client } from './control/mem0';
 import { runAutoRecall } from './recall/auto';
 import type { PluginConfig } from './types';
@@ -181,6 +184,23 @@ export default function register(api: OpenClawApi) {
       const submitted = await mem0Client.captureTurn(payload);
       if (submitted.status === 'submitted' && submitted.event_id) {
         const confirmation = await mem0Client.waitForEvent(submitted.event_id, { attempts: 2, delayMs: 0 });
+        if (confirmation.status === 'confirmed') {
+          const extractedMemories = await mem0Client.fetchCapturedMemories({
+            userId: payload.userId,
+            eventId: submitted.event_id,
+          });
+          const synced = await syncCapturedMemories({
+            memories: extractedMemories,
+            userId: payload.userId,
+            runId: payload.runId,
+            scope: payload.scope,
+            eventId: submitted.event_id,
+            auditStore: new FileAuditStore(cfg.auditStorePath),
+            adapter: new LanceDbMemoryAdapter(cfg.lancedbPath),
+          });
+          return { submitted, confirmation, synced };
+        }
+
         return { submitted, confirmation };
       }
 

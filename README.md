@@ -132,6 +132,7 @@ Auto capture:
 - disabled by default
 - when enabled and the host exposes a compatible end-of-turn hook, the plugin submits the latest `user + assistant` turn to Mem0
 - capture uses a deterministic idempotency key per turn
+- after Mem0 confirms the capture event, extracted memories are synced back into the local audit plane and LanceDB hot plane
 
 ## Development
 

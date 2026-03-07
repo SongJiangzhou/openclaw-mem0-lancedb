@@ -10,10 +10,18 @@ export type Mem0EventResult =
   | { status: 'timeout' }
   | { status: 'unavailable' };
 
+export interface Mem0ExtractedMemory {
+  id: string | null;
+  text: string;
+  categories: string[];
+  hash: string | null;
+}
+
 export interface Mem0Client {
   storeMemory(record: MemoryRecord): Promise<Mem0StoreResult>;
   captureTurn(payload: AutoCapturePayload): Promise<Mem0StoreResult>;
   waitForEvent(eventId: string, options?: { attempts?: number; delayMs?: number }): Promise<Mem0EventResult>;
+  fetchCapturedMemories(params: { userId: string; eventId: string }): Promise<Mem0ExtractedMemory[]>;
 }
 
 export class HttpMem0Client implements Mem0Client {
@@ -131,6 +139,38 @@ export class HttpMem0Client implements Mem0Client {
 
     return { status: 'timeout' };
   }
+
+  async fetchCapturedMemories(params: { userId: string; eventId: string }): Promise<Mem0ExtractedMemory[]> {
+    if (!this.config.mem0ApiKey) {
+      return [];
+    }
+
+    const query = new URLSearchParams({
+      user_id: params.userId,
+      event_id: params.eventId,
+    });
+    const response = await this.fetchImpl(`${this.config.mem0BaseUrl}/v1/memories/?${query.toString()}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Token ${this.config.mem0ApiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Mem0 fetch captured memories failed: ${response.status}`);
+    }
+
+    const data: any = await response.json();
+    const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+    return items
+      .map((item: any) => ({
+        id: item.id || item.mem0_id || null,
+        text: item.memory || item.text || '',
+        categories: Array.isArray(item.categories) ? item.categories : [],
+        hash: item.hash || null,
+      }))
+      .filter((item: Mem0ExtractedMemory) => Boolean(item.text));
+  }
 }
 
 export class FakeMem0Client implements Mem0Client {
@@ -155,5 +195,9 @@ export class FakeMem0Client implements Mem0Client {
 
   async waitForEvent(_eventId: string, _options?: { attempts?: number; delayMs?: number }): Promise<Mem0EventResult> {
     return this.eventResult;
+  }
+
+  async fetchCapturedMemories(_params: { userId: string; eventId: string }): Promise<Mem0ExtractedMemory[]> {
+    return [];
   }
 }

@@ -148,3 +148,47 @@ test('http mem0 client submits capture payload with messages', async () => {
   assert.match(capturedBody, /"messages"/);
   assert.match(capturedBody, /用户要求以后都用中文回复/);
 });
+
+test('http mem0 client fetches extracted memories for a confirmed capture event', async () => {
+  const fetchStub = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (!url.includes('/v1/memories/')) {
+      throw new Error(`unexpected url: ${url}`);
+    }
+
+    return {
+      ok: true,
+      json: async () => ({
+        items: [
+          {
+            id: 'mem0-captured-1',
+            memory: '用户偏好使用中文回复',
+            categories: ['preference'],
+            hash: 'hash-1',
+          },
+        ],
+      }),
+    };
+  }) as unknown as typeof fetch;
+  const client = new HttpMem0Client(buildConfig(), fetchStub);
+
+  const memories = await client.fetchCapturedMemories({ userId: 'railgun', eventId: 'evt-capture' });
+
+  assert.equal(memories.length, 1);
+  assert.equal(memories[0]?.id, 'mem0-captured-1');
+  assert.equal(memories[0]?.text, '用户偏好使用中文回复');
+  assert.deepEqual(memories[0]?.categories, ['preference']);
+  assert.equal(memories[0]?.hash, 'hash-1');
+});
+
+test('http mem0 client returns empty extracted memories when response has no items', async () => {
+  const fetchStub = (async () => ({
+    ok: true,
+    json: async () => ({ items: [] }),
+  })) as unknown as typeof fetch;
+  const client = new HttpMem0Client(buildConfig(), fetchStub);
+
+  const memories = await client.fetchCapturedMemories({ userId: 'railgun', eventId: 'evt-missing' });
+
+  assert.deepEqual(memories, []);
+});
