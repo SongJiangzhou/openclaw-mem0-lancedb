@@ -26,7 +26,7 @@ type OpenClawApi = {
   config?: any;
   pluginConfig?: Partial<PluginConfig>;
   registerTool: (tool: any, options?: any) => void;
-  registerHook?: (name: string, handler: (...args: any[]) => any) => void;
+  registerHook?: (events: string | string[], handler: (...args: any[]) => any, opts?: any) => void;
 };
 
 function resolveConfig(raw?: Partial<PluginConfig>): PluginConfig {
@@ -175,7 +175,7 @@ export default function register(api: OpenClawApi) {
         config: cfg.autoRecall,
         search: (params) => customSearch.execute(params),
       });
-    });
+    }, { name: 'mem0-auto-recall' });
   }
 
   if (cfg.autoCapture.enabled && typeof api.registerHook === 'function') {
@@ -216,7 +216,7 @@ export default function register(api: OpenClawApi) {
       }
 
       return { submitted };
-    });
+    }, { name: 'mem0-auto-capture' });
   }
 
   api.logger?.info?.('[openclaw-mem0-lancedb] registered');
