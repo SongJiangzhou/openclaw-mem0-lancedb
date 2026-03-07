@@ -14,7 +14,7 @@
 ## 安装
 
 ***REMOVED***bash
-cd plugins/memory-mem0-lancedb
+cd plugins/openclaw-mem0-lancedb
 bash scripts/install.sh
 ***REMOVED***
 
@@ -26,10 +26,10 @@ bash scripts/install.sh
 {
   "plugins": {
     "slots": {
-      "memory": "memory-mem0-lancedb"
+      "memory": "openclaw-mem0-lancedb"
     },
     "entries": {
-      "memory-mem0-lancedb": {
+      "openclaw-mem0-lancedb": {
         "enabled": true,
         "config": {
           "mem0ApiKey": "your-mem0-api-key（可选，留空则为纯本地模式）",

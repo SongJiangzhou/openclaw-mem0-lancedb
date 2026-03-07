@@ -212,5 +212,5 @@ export default function register(api: OpenClawApi) {
     });
   }
 
-  api.logger?.info?.('[memory-mem0-lancedb] registered');
+  api.logger?.info?.('[openclaw-mem0-lancedb] registered');
 }

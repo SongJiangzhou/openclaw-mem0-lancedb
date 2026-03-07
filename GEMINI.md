@@ -1,6 +1,6 @@
 # Project Overview
 
-**Name:** memory-mem0-lancedb
+**Name:** openclaw-mem0-lancedb
 **Type:** OpenClaw Memory Plugin
 
 This project is an OpenClaw memory plugin that leverages **Mem0** as the control plane and **LanceDB** as the retrieval layer (hot plane). It provides a structured, multi-tiered architecture for agent memory management.

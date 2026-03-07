@@ -1,4 +1,4 @@
-# AGENTS.md - memory-mem0-lancedb
+# AGENTS.md - openclaw-mem0-lancedb
 
 ## Build / Test / Lint Commands
 

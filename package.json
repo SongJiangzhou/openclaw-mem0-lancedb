@@ -1,5 +1,5 @@
 {
-  "name": "memory-mem0-lancedb",
+  "name": "openclaw-mem0-lancedb",
   "version": "0.1.0",
   "description": "OpenClaw memory plugin with Mem0 + LanceDB",
   "main": "dist/index.js",

@@ -1,5 +1,5 @@
 {
-  "id": "memory-mem0-lancedb",
+  "id": "openclaw-mem0-lancedb",
   "name": "Mem0 + LanceDB Memory",
   "description": "OpenClaw memory plugin using Mem0 as control plane and LanceDB as retrieval layer",
   "version": "0.1.0",

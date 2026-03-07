@@ -39,7 +39,7 @@ confirm() {
     done
 }
 
-echo "[install] Building memory-mem0-lancedb plugin..."
+echo "[install] Building openclaw-mem0-lancedb plugin..."
 
 cd "$(dirname "$0")/.."
 
@@ -54,7 +54,7 @@ npm run build
 
 # Link to OpenClaw plugins directory
 OPENCLAW_PLUGINS_DIR="${HOME}/.openclaw/extensions"
-PLUGIN_NAME="memory-mem0-lancedb"
+PLUGIN_NAME="openclaw-mem0-lancedb"
 
 echo "[install] Linking to ${OPENCLAW_PLUGINS_DIR}/${PLUGIN_NAME}..."
 confirm "[install] Create or update the OpenClaw plugin symlink?"

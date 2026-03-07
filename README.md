@@ -14,7 +14,7 @@ Current embedded architecture:
 ## Installation
 
 ***REMOVED***bash
-cd plugins/memory-mem0-lancedb
+cd plugins/openclaw-mem0-lancedb
 bash scripts/install.sh
 ***REMOVED***
 
@@ -26,10 +26,10 @@ Add the plugin entry to `openclaw.json`:
 {
   "plugins": {
     "slots": {
-      "memory": "memory-mem0-lancedb"
+      "memory": "openclaw-mem0-lancedb"
     },
     "entries": {
-      "memory-mem0-lancedb": {
+      "openclaw-mem0-lancedb": {
         "enabled": true,
         "config": {
           "mem0ApiKey": "your-mem0-api-key (optional; leave empty for local-only mode)",
