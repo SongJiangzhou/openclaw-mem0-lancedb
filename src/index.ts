@@ -65,7 +65,7 @@ function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): P
     let defaultUrl = 'https://api.openai.com';
 
     if (p === 'gemini') {
-      fallbackModel = 'models/text-embedding-004';
+      fallbackModel = 'text-embedding-004';
       defaultDim = 768;
       defaultUrl = 'https://generativelanguage.googleapis.com';
     } else if (p === 'ollama') {

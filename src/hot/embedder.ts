@@ -32,7 +32,8 @@ function resolveModel(cfg: EmbeddingConfig) {
         apiKey: cfg.apiKey,
         baseURL: cfg.baseUrl || undefined,
       });
-      return google.embeddingModel(cfg.model || 'text-embedding-004');
+      const geminiModelId = (cfg.model || 'text-embedding-004').replace(/^models\//, '');
+      return google.embeddingModel(geminiModelId);
     }
     case 'openai': {
       const openai = createOpenAI({
