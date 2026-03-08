@@ -19,3 +19,4 @@ memory_lancedb/
 # Mem0 Local Server
 .venv/
 .mem0_local_db/
+__pycache__/
