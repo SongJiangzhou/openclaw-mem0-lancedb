@@ -91,3 +91,75 @@ test('install.mjs --skip-config leaves openclaw.json unchanged', () => {
   const config = JSON.parse(readFileSync(join(homeDir, '.openclaw', 'openclaw.json'), 'utf8'));
   assert.deepEqual(config, originalConfig);
 });
+
+test('buildDefaultPluginConfig preserves an existing remote mem0 api key', async () => {
+  const installer = await import(INSTALLER_PATH);
+  const config = installer.buildDefaultPluginConfig({
+    mem0: {
+      mode: 'remote',
+      baseUrl: 'https://api.mem0.ai',
+      apiKey: 'existing-test-key',
+    },
+  });
+
+  assert.equal(config.mem0.mode, 'remote');
+  assert.equal(config.mem0.apiKey, 'existing-test-key');
+});
+
+test('install.mjs --yes keeps an existing remote mem0 api key', () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), 'install-mjs-keep-key-'));
+  const binDir = join(tempRoot, 'bin');
+  const homeDir = join(tempRoot, 'home');
+  const logPath = join(tempRoot, 'stub.log');
+
+  mkdirSync(binDir, { recursive: true });
+  mkdirSync(join(homeDir, '.openclaw'), { recursive: true });
+  writeFileSync(
+    join(homeDir, '.openclaw', 'openclaw.json'),
+    JSON.stringify(
+      {
+        plugins: {
+          entries: {
+            'openclaw-mem0-lancedb': {
+              enabled: true,
+              config: {
+                mem0: {
+                  mode: 'remote',
+                  baseUrl: 'https://api.mem0.ai',
+                  apiKey: 'existing-test-key',
+                },
+              },
+            },
+          },
+          allow: [],
+          load: { paths: [] },
+          slots: {},
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  createStubCommand(binDir, 'npm');
+  createStubCommand(binDir, 'mkdir');
+  createStubCommand(binDir, 'rm');
+  createStubCommand(binDir, 'ln');
+
+  const result = spawnSync('node', [INSTALLER_PATH, '--lang', 'en', '--yes'], {
+    cwd: resolve(process.cwd()),
+    env: {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH || ''}`,
+      HOME: homeDir,
+      STUB_LOG: logPath,
+    },
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+  const config = JSON.parse(readFileSync(join(homeDir, '.openclaw', 'openclaw.json'), 'utf8'));
+  const pluginConfig = config.plugins.entries['openclaw-mem0-lancedb']?.config;
+  assert.equal(pluginConfig?.mem0?.apiKey, 'existing-test-key');
+});
