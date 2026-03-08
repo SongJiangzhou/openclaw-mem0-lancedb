@@ -203,14 +203,17 @@ try {
 
         MEM0_BASE_URL=""
         MEM0_API_KEY=""
+        MEM0_MODE="remote"
 
         case $MEM0_CHOICE in
             0)
+                MEM0_MODE="local"
                 MEM0_BASE_URL=$(ask_input "  本地 Mem0 URL" "http://127.0.0.1:8000")
                 MEM0_API_KEY=""
                 echo "  ✓ 将使用本地 Mem0: ${MEM0_BASE_URL}"
                 ;;
             1)
+                MEM0_MODE="remote"
                 MEM0_BASE_URL="https://api.mem0.ai"
                 MEM0_API_KEY=$(ask_input "  请输入 Mem0 API Key" "")
                 if [ -z "$MEM0_API_KEY" ]; then
@@ -220,6 +223,7 @@ try {
                 fi
                 ;;
             2)
+                MEM0_MODE="disabled"
                 MEM0_BASE_URL="https://api.mem0.ai"
                 MEM0_API_KEY=""
                 echo "  ✓ Mem0 已禁用。将仅使用本地 LanceDB 模式。"
@@ -286,6 +290,11 @@ try {
         PLUGIN_CONFIG=$(cat <<EOF
 {
   "lancedbPath": "${HOME}/.openclaw/workspace/data/memory_lancedb",
+  "mem0": {
+    "mode": "${MEM0_MODE}",
+    "baseUrl": "${MEM0_BASE_URL}",
+    "apiKey": "${MEM0_API_KEY}"
+  },
   "mem0BaseUrl": "${MEM0_BASE_URL}",
   "mem0ApiKey": "${MEM0_API_KEY}",
   "outboxDbPath": "${HOME}/.openclaw/workspace/data/memory_outbox.db",

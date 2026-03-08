@@ -32,8 +32,11 @@ Add the plugin entry to `openclaw.json`:
       "openclaw-mem0-lancedb": {
         "enabled": true,
         "config": {
-          "mem0ApiKey": "your-mem0-api-key (optional; leave empty for local-only mode)",
-          "mem0BaseUrl": "https://api.mem0.ai",
+          "mem0": {
+            "mode": "local",
+            "baseUrl": "http://127.0.0.1:8000",
+            "apiKey": ""
+          },
           "lancedbPath": "~/.openclaw/workspace/data/memory_lancedb",
           "outboxDbPath": "~/.openclaw/workspace/data/outbox.json",
           "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl",
@@ -49,6 +52,14 @@ Add the plugin entry to `openclaw.json`:
   }
 }
 ***REMOVED***
+
+`mem0.mode` is the authoritative switch:
+
+- `local`: no API key required
+- `remote`: API key required
+- `disabled`: Mem0 requests are disabled
+
+`mem0.baseUrl` only controls the request target. It no longer determines whether the plugin treats Mem0 as local or remote.
 
 ## Tools
 

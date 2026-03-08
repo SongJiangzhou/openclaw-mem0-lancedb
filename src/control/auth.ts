@@ -22,7 +22,19 @@ export function isLocalMem0BaseUrl(baseUrl: string): boolean {
  * - either an API key is configured, or
  * - the base URL is local (no key required).
  */
-export function hasMem0Auth(config: Pick<PluginConfig, 'mem0ApiKey' | 'mem0BaseUrl'>): boolean {
+export function hasMem0Auth(config: Pick<PluginConfig, 'mem0ApiKey' | 'mem0BaseUrl' | 'mem0Mode'>): boolean {
+  if (config.mem0Mode === 'disabled') {
+    return false;
+  }
+
+  if (config.mem0Mode === 'local') {
+    return true;
+  }
+
+  if (config.mem0Mode === 'remote') {
+    return Boolean(config.mem0ApiKey);
+  }
+
   return Boolean(config.mem0ApiKey) || isLocalMem0BaseUrl(config.mem0BaseUrl);
 }
 

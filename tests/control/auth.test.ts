@@ -32,19 +32,27 @@ test('isLocalMem0BaseUrl returns false for empty string', () => {
 // --- hasMem0Auth ---
 
 test('hasMem0Auth returns true when api key is present', () => {
-  assert.equal(hasMem0Auth({ mem0ApiKey: 'test-key', mem0BaseUrl: 'https://api.mem0.ai' }), true);
+  assert.equal(hasMem0Auth({ mem0ApiKey: 'test-key', mem0BaseUrl: 'https://api.mem0.ai', mem0Mode: 'remote' }), true);
 });
 
 test('hasMem0Auth returns false for cloud URL without api key', () => {
-  assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'https://api.mem0.ai' }), false);
+  assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'https://api.mem0.ai', mem0Mode: 'remote' }), false);
 });
 
-test('hasMem0Auth returns true for local URL without api key', () => {
-  assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'http://127.0.0.1:8000' }), true);
+test('hasMem0Auth returns true for local mode without api key', () => {
+  assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'https://api.mem0.ai', mem0Mode: 'local' }), true);
 });
 
-test('hasMem0Auth returns true for local URL with api key', () => {
-  assert.equal(hasMem0Auth({ mem0ApiKey: 'key', mem0BaseUrl: 'http://localhost:8000' }), true);
+test('hasMem0Auth uses explicit local mode over remote-looking url', () => {
+  assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'https://api.mem0.ai', mem0Mode: 'local' }), true);
+});
+
+test('hasMem0Auth uses explicit remote mode over localhost url', () => {
+  assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'http://127.0.0.1:8000', mem0Mode: 'remote' }), false);
+});
+
+test('hasMem0Auth keeps legacy localhost fallback when mode is absent', () => {
+  assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'http://localhost:8000' }), true);
 });
 
 // --- buildMem0Headers ---

@@ -9,7 +9,7 @@ import { HttpMem0Client } from './control/mem0';
 import { runAutoRecall } from './recall/auto';
 import { Mem0Poller } from './bridge/poller';
 import { EmbeddingMigrationWorker } from './hot/migration-worker';
-import type { PluginConfig } from './types';
+import type { Mem0Mode, PluginConfig } from './types';
 
 function textResult(summary: string, details: any) {
   return {
@@ -31,10 +31,14 @@ type OpenClawApi = {
 };
 
 export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): PluginConfig {
+  const mem0 = resolveMem0Config(raw);
+
   return {
     lancedbPath: raw?.lancedbPath || '~/.openclaw/workspace/data/memory_lancedb',
-    mem0BaseUrl: raw?.mem0BaseUrl || 'https://api.mem0.ai',
-    mem0ApiKey: raw?.mem0ApiKey || '',
+    mem0,
+    mem0Mode: mem0.mode,
+    mem0BaseUrl: mem0.baseUrl,
+    mem0ApiKey: mem0.apiKey,
     outboxDbPath: raw?.outboxDbPath || '~/.openclaw/workspace/data/outbox.json',
     auditStorePath: raw?.auditStorePath || '~/.openclaw/workspace/data/memory_audit/memory_records.jsonl',
     autoRecall: {
@@ -56,6 +60,35 @@ export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): Plu
       batchSize: raw?.embeddingMigration?.batchSize || 20,
     },
   };
+}
+
+function resolveMem0Config(raw?: Partial<PluginConfig>): NonNullable<PluginConfig['mem0']> {
+  const explicitBaseUrl = raw?.mem0?.baseUrl || raw?.mem0BaseUrl || 'https://api.mem0.ai';
+  const explicitApiKey = raw?.mem0?.apiKey || raw?.mem0ApiKey || '';
+  const explicitMode = raw?.mem0?.mode || raw?.mem0Mode;
+
+  return {
+    mode: explicitMode || inferLegacyMem0Mode(explicitBaseUrl),
+    baseUrl: explicitBaseUrl,
+    apiKey: explicitApiKey,
+  };
+}
+
+function inferLegacyMem0Mode(baseUrl: string): Mem0Mode {
+  if (!baseUrl) {
+    return 'disabled';
+  }
+
+  try {
+    const url = new URL(baseUrl);
+    if (['localhost', '127.0.0.1', '0.0.0.0'].includes(url.hostname)) {
+      return 'local';
+    }
+  } catch {
+    // Ignore invalid URLs and keep the remote default for backward compatibility.
+  }
+
+  return 'remote';
 }
 
 function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): PluginConfig['embedding'] {

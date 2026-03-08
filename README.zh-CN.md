@@ -32,8 +32,11 @@ bash scripts/install.sh
       "openclaw-mem0-lancedb": {
         "enabled": true,
         "config": {
-          "mem0ApiKey": "your-mem0-api-key（可选，留空则为纯本地模式）",
-          "mem0BaseUrl": "https://api.mem0.ai",
+          "mem0": {
+            "mode": "local",
+            "baseUrl": "http://127.0.0.1:8000",
+            "apiKey": ""
+          },
           "lancedbPath": "~/.openclaw/workspace/data/memory_lancedb",
           "outboxDbPath": "~/.openclaw/workspace/data/outbox.json",
           "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl",
@@ -49,6 +52,14 @@ bash scripts/install.sh
   }
 }
 ***REMOVED***
+
+`mem0.mode` 现在是权威开关：
+
+- `local`：本地 Mem0，不要求 API Key
+- `remote`：远端 Mem0，要求 API Key
+- `disabled`：禁用 Mem0 请求
+
+`mem0.baseUrl` 只表示请求地址，不再负责推断“是不是本地 Mem0”。
 
 ## 提供的工具
 

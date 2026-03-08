@@ -38,6 +38,8 @@ export interface MemoryRecord {
  */
 export interface PluginConfig {
   lancedbPath: string;
+  mem0?: Mem0Config;
+  mem0Mode?: Mem0Mode;
   mem0BaseUrl: string;
   mem0ApiKey: string;
   outboxDbPath: string;
@@ -54,6 +56,14 @@ export interface EmbeddingConfig {
   apiKey: string;
   model: string;
   dimension: number;
+}
+
+export type Mem0Mode = 'local' | 'remote' | 'disabled';
+
+export interface Mem0Config {
+  mode: Mem0Mode;
+  baseUrl: string;
+  apiKey: string;
 }
 
 export interface EmbeddingMigrationConfig {

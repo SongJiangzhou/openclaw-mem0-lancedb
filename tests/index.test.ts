@@ -29,6 +29,20 @@ test('resolveConfig respects embedding migration overrides', async () => {
   assert.equal(config.embeddingMigration?.batchSize, 5);
 });
 
+test('resolveConfig maps nested mem0 config into explicit runtime mode', async () => {
+  const config = resolveConfig({
+    mem0: {
+      mode: 'local',
+      baseUrl: 'http://127.0.0.1:8000',
+      apiKey: '',
+    },
+  } as any);
+
+  assert.equal(config.mem0Mode, 'local');
+  assert.equal(config.mem0BaseUrl, 'http://127.0.0.1:8000');
+  assert.equal(config.mem0ApiKey, '');
+});
+
 test('register installs auto-recall hook when enabled and hook api exists', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
   const tools: string[] = [];
