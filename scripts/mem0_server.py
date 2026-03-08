@@ -10,7 +10,7 @@ app = FastAPI(title="Mem0 Local Server")
 # Initialize Mem0 with local configuration
 try:
     memory = Memory.from_config({
-        "vector_store": {"provider": "lancedb", "config": {"db_uri": "./.mem0_local_db"}},
+        "vector_store": {"provider": "qdrant", "config": {"path": "./.mem0_local_db"}},
     })
 except Exception as e:
     print(f"Warning: Failed to initialize Mem0. Error: {e}")
