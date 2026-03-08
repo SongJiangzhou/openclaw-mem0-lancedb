@@ -53,7 +53,8 @@ function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): PluginConf
 }
 
 function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): PluginConfig['embedding'] {
-  if (raw?.embedding && raw.embedding.provider !== 'fake') {
+  // 如果显式配置了 embedding（包括 fake），直接使用
+  if (raw?.embedding && raw.embedding.provider) {
     return raw.embedding;
   }
 
@@ -65,9 +66,9 @@ function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): P
     let defaultUrl = 'https://api.openai.com';
 
     if (p === 'gemini') {
-      fallbackModel = 'text-embedding-004';
-      defaultDim = 768;
-      defaultUrl = 'https://generativelanguage.googleapis.com/v1';
+      fallbackModel = 'gemini-embedding-001';
+      defaultDim = 3072;
+      defaultUrl = 'https://generativelanguage.googleapis.com/v1beta';
     } else if (p === 'ollama') {
       fallbackModel = 'nomic-embed-text';
       defaultDim = 768;

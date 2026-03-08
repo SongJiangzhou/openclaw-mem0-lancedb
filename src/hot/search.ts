@@ -1,6 +1,9 @@
 import { embedText } from './embedder';
 import { openMemoryTable } from '../db/table';
 import { getMemoryTableName } from '../db/schema';
+import * as lancedb from '@lancedb/lancedb';
+import * as path from 'path';
+import * as os from 'os';
 import type { PluginConfig, SearchParams, SearchResult } from '../types';
 
 const RRF_K = 60;
@@ -16,37 +19,122 @@ export class HotMemorySearch {
 
   async search(params: SearchParams): Promise<SearchResult> {
     const { query, userId, topK = 5, filters } = params;
-    const dim = this.config.embedding?.dimension || 16;
-    const tbl = await openMemoryTable(this.config.lancedbPath, dim);
+    const currentDim = this.config.embedding?.dimension || 16;
     const whereClause = this.buildWhereClause(userId, filters);
     
-    // We fetch more for MMR pool
-    const fetchK = topK * 3;
-    const ftsRows = await this.searchFts(tbl, query, whereClause, fetchK);
-    const vectorRows = await this.searchVector(tbl, query, whereClause, fetchK);
+    // 发现所有可用的记忆表
+    const allTables = await this.discoverTables();
+    const allRows: any[] = [];
     
-    let rows = this.mergeRrf(ftsRows, vectorRows, fetchK);
-
-    if (rows.length === 0) {
-      const fallbackRows = await tbl.query().where(whereClause).limit(fetchK).toArray();
-      const needle = query.toLowerCase();
-      rows = fallbackRows.filter((row: any) => String(row.text || '').toLowerCase().includes(needle));
+    // 对每个表进行搜索
+    for (const { dimension, name } of allTables) {
+      const tbl = await openMemoryTable(this.config.lancedbPath, dimension);
+      
+      // 当前维度的表：使用向量+FTS混合搜索
+      if (dimension === currentDim) {
+        const fetchK = topK * 3;
+        const ftsRows = await this.searchFts(tbl, query, whereClause, fetchK);
+        const vectorRows = await this.searchVector(tbl, query, whereClause, fetchK);
+        const merged = this.mergeRrf(ftsRows, vectorRows, fetchK);
+        allRows.push(...merged.map(r => ({ ...r, _sourceDim: dimension })));
+      } else {
+        // 其他维度的表：仅使用FTS文本搜索（向量维度不匹配）
+        const fetchK = topK * 2;
+        const ftsRows = await this.searchFts(tbl, query, whereClause, fetchK);
+        // 为FTS结果赋予基础分数
+        const scoredFtsRows = ftsRows.map((r, idx) => ({
+          ...r,
+          __rrf_score: 1 / (RRF_K + idx + 1),
+          _sourceDim: dimension,
+        }));
+        allRows.push(...scoredFtsRows);
+      }
     }
-
-    if (rows.length > 0) {
-      const queryVector = await embedText(query, this.config.embedding);
-      const ranked = this.applyTimeDecay(rows);
-      const deduplicated = this.applyMmr(ranked, queryVector, topK);
+    
+    // 去重：按 memory_uid 保留最高分的记录
+    const uniqueRows = this.deduplicateByUid(allRows);
+    
+    if (uniqueRows.length === 0) {
       return {
-        memories: deduplicated.map((row) => this.toMemoryRecord(row, dim)),
+        memories: [],
         source: 'lancedb',
       };
     }
-
+    
+    // 时间衰减排序
+    const ranked = this.applyTimeDecay(uniqueRows);
+    
+    // 如果当前维度有效，使用MMR进行多样性排序
+    const currentDimRows = ranked.filter(r => r._sourceDim === currentDim);
+    const otherDimRows = ranked.filter(r => r._sourceDim !== currentDim);
+    
+    let finalRows: any[];
+    if (currentDimRows.length > 0) {
+      const queryVector = await embedText(query, this.config.embedding);
+      const mmrSelected = this.applyMmr(currentDimRows, queryVector, topK);
+      // 如果MMR结果不够，补充其他维度的结果
+      if (mmrSelected.length < topK && otherDimRows.length > 0) {
+        finalRows = [...mmrSelected, ...otherDimRows.slice(0, topK - mmrSelected.length)];
+      } else {
+        finalRows = mmrSelected.slice(0, topK);
+      }
+    } else {
+      // 没有当前维度的结果，直接返回其他维度的排序结果
+      finalRows = ranked.slice(0, topK);
+    }
+    
     return {
-      memories: [],
+      memories: finalRows.map((row) => this.toMemoryRecord(row, row._sourceDim || currentDim)),
       source: 'lancedb',
     };
+  }
+  
+  private async discoverTables(): Promise<Array<{ dimension: number; name: string }>> {
+    const resolvedPath = this.config.lancedbPath.startsWith('~/')
+      ? path.join(os.homedir(), this.config.lancedbPath.slice(2))
+      : this.config.lancedbPath;
+    
+    const db = await lancedb.connect(resolvedPath);
+    const tableNames = await db.tableNames();
+    
+    const tables: Array<{ dimension: number; name: string }> = [];
+    
+    for (const name of tableNames) {
+      if (name === 'memory_records') {
+        tables.push({ dimension: 16, name });
+      } else if (name.startsWith('memory_records_d')) {
+        const dimMatch = name.match(/memory_records_d(\d+)/);
+        if (dimMatch) {
+          tables.push({ dimension: parseInt(dimMatch[1], 10), name });
+        }
+      }
+    }
+    
+    // 按维度排序，当前维度的表优先
+    const currentDim = this.config.embedding?.dimension || 16;
+    tables.sort((a, b) => {
+      if (a.dimension === currentDim) return -1;
+      if (b.dimension === currentDim) return 1;
+      return b.dimension - a.dimension; // 高维度优先
+    });
+    
+    return tables;
+  }
+  
+  private deduplicateByUid(rows: any[]): any[] {
+    const seen = new Map<string, any>();
+    
+    for (const row of rows) {
+      const uid = row.memory_uid;
+      if (!uid) continue;
+      
+      const existing = seen.get(uid);
+      if (!existing || (row.__rrf_score || 0) > (existing.__rrf_score || 0)) {
+        seen.set(uid, row);
+      }
+    }
+    
+    return Array.from(seen.values());
   }
 
   private buildWhereClause(userId: string, filters?: SearchParams['filters']): string {
