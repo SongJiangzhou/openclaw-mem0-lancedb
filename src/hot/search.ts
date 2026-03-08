@@ -7,6 +7,8 @@ import type { PluginConfig, SearchParams, SearchResult } from '../types';
 const RRF_K = 60;
 const MMR_LAMBDA = 0.5;
 const SIMILARITY_THRESHOLD = 0.85;
+const EXACT_QUERY_MATCH_BOOST = 1.0;
+const STRUCTURED_TOKEN_BOOST = 0.75;
 
 export class HotMemorySearch {
   private readonly config: PluginConfig;
@@ -59,8 +61,8 @@ export class HotMemorySearch {
       };
     }
     
-    // 时间衰减排序
-    const ranked = this.applyTimeDecay(uniqueRows);
+    // 时间衰减 + lexical boosts
+    const ranked = this.applyRankingAdjustments(uniqueRows, query);
     
     // 如果当前维度有效，使用MMR进行多样性排序
     const currentDimRows = ranked.filter(r => r._sourceDim === currentDim);
@@ -166,18 +168,44 @@ export class HotMemorySearch {
     });
   }
 
-  private applyTimeDecay(rows: any[]): any[] {
+  private applyRankingAdjustments(rows: any[], query: string): any[] {
     const now = Date.now();
+    const normalizedQuery = this.normalizeText(query);
+    const tokenQuery = this.looksLikeTokenRetrievalQuery(normalizedQuery);
+
     return rows.map((r) => {
       let ageMs = now - new Date(r.ts_event).getTime();
       if (isNaN(ageMs) || ageMs < 0) ageMs = 0;
       const decay = Math.exp(-ageMs / (1000 * 60 * 60 * 24 * 30)); // 30-day half-life roughly
       const baseScore = r.__rrf_score || 1;
+      const text = this.normalizeText(r.text || '');
+      let lexicalBoost = 0;
+
+      if (normalizedQuery && text.includes(normalizedQuery)) {
+        lexicalBoost += EXACT_QUERY_MATCH_BOOST;
+      }
+
+      if (tokenQuery && this.containsStructuredToken(String(r.text || ''))) {
+        lexicalBoost += STRUCTURED_TOKEN_BOOST;
+      }
+
       return {
         ...r,
-        __final_score: baseScore * (0.8 + 0.2 * decay),
+        __final_score: baseScore * (0.8 + 0.2 * decay) + lexicalBoost,
       };
     }).sort((a, b) => b.__final_score - a.__final_score);
+  }
+
+  private normalizeText(value: string): string {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  private looksLikeTokenRetrievalQuery(query: string): boolean {
+    return /口令|密码|token|passcode|验证码|code|密钥/.test(query);
+  }
+
+  private containsStructuredToken(text: string): boolean {
+    return /[a-z0-9]+(?:-[a-z0-9]+){2,}/i.test(text);
   }
 
   private applyMmr(rows: any[], queryVector: number[], topK: number): any[] {
