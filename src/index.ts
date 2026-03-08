@@ -1,3 +1,7 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import { FileAuditStore } from './audit/store';
 import { LanceDbMemoryAdapter } from './bridge/adapter';
 import { MemorySearchTool } from './tools/search';
@@ -248,13 +252,15 @@ export default function register(api: OpenClawApi) {
       // event: { prompt: string, messages: unknown[] }
       // ctx: { agentId?, sessionKey?, sessionId?, workspaceDir? }
       const event = args.length >= 2 ? args[0] : args[0];
+      const ctx = args.length >= 2 ? args[1] : {};
+      const sessionKey = ctx?.sessionKey || ctx?.agentId || '';
       const latestUserMessage = event?.prompt || getLatestUserMessage(event);
       if (!latestUserMessage) {
         debug.basic('auto_recall.skipped', { reason: 'no_query' });
         return null;
       }
 
-      const block = await runAutoRecall({
+      const { block, source } = await runAutoRecall({
         query: String(latestUserMessage),
         userId: 'default',
         config: cfg.autoRecall,
@@ -262,13 +268,27 @@ export default function register(api: OpenClawApi) {
         search: (params) => customSearch.execute(params),
       });
 
-      if (!block) {
+      const parts: string[] = [];
+
+      // Surface pending capture notification from previous turn
+      const captureNotification = sessionKey ? readAndClearPendingCapture(sessionKey) : null;
+      if (captureNotification) {
+        const syncedAttr = captureNotification.syncedToLancedb ? ' synced="lancedb"' : '';
+        const lines = captureNotification.memories.map((m: string) => `- ${m}`).join('\n');
+        parts.push(
+          `<memory_capture_result via="${captureNotification.via}" count="${captureNotification.count}"${syncedAttr}>\n${lines}\n</memory_capture_result>`,
+        );
+      }
+
+      if (block) {
+        parts.push(block);
+      }
+
+      if (!parts.length) {
         return null;
       }
 
-      return {
-        prependContext: block,
-      };
+      return { prependContext: parts.join('\n') };
     }, { name: 'mem0-auto-recall' });
   }
 
@@ -279,6 +299,7 @@ export default function register(api: OpenClawApi) {
       // ctx: { agentId?, sessionKey?, sessionId?, workspaceDir?, messageProvider? }
       const event = args.length >= 2 ? args[0] : args[0];
       const ctx = args.length >= 2 ? args[1] : {};
+      const sessionKey = ctx?.sessionKey || ctx?.agentId || '';
       const { latestUserMessage, latestAssistantMessage } = extractLatestMessages(event?.messages);
       debug.basic('auto_capture.hook_invoked', {
         event: 'agent_end',
@@ -329,6 +350,14 @@ export default function register(api: OpenClawApi) {
             extractedCount: extractedMemories.length,
             synced: synced.synced,
           });
+          if (sessionKey && extractedMemories.length > 0) {
+            writePendingCapture(sessionKey, {
+              memories: extractedMemories.map((m: any) => m.memory || m.text || String(m)),
+              via: 'mem0',
+              syncedToLancedb: synced.synced > 0,
+              count: extractedMemories.length,
+            });
+          }
           return { submitted, confirmation, synced };
         }
 
@@ -342,6 +371,30 @@ export default function register(api: OpenClawApi) {
   }
 
   api.logger?.info?.('[openclaw-mem0-lancedb] registered');
+}
+
+function pendingCapturePath(sessionKey: string): string {
+  const safe = sessionKey.replace(/[^a-z0-9]/gi, '_').slice(0, 64);
+  return path.join(os.tmpdir(), `mem0-cap-${safe}.json`);
+}
+
+function writePendingCapture(sessionKey: string, notification: object): void {
+  try {
+    fs.writeFileSync(pendingCapturePath(sessionKey), JSON.stringify(notification), 'utf-8');
+  } catch {
+    // non-fatal
+  }
+}
+
+function readAndClearPendingCapture(sessionKey: string): Record<string, any> | null {
+  const filePath = pendingCapturePath(sessionKey);
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    fs.unlinkSync(filePath);
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 function extractLatestMessages(messages: unknown[]): { latestUserMessage: string; latestAssistantMessage: string } {

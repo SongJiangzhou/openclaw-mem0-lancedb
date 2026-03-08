@@ -1,7 +1,7 @@
 import type { AutoRecallConfig, SearchResult } from '../types';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
 
-export function buildAutoRecallBlock(memories: SearchResult['memories'], config: AutoRecallConfig): string {
+export function buildAutoRecallBlock(memories: SearchResult['memories'], config: AutoRecallConfig, source?: string): string {
   if (!memories.length) {
     return '';
   }
@@ -9,7 +9,8 @@ export function buildAutoRecallBlock(memories: SearchResult['memories'], config:
   const lines = memories
     .slice(0, config.topK)
     .map((memory) => `- [${memory.scope}] ${memory.text}`);
-  let block = `<relevant_memories>\n${lines.join('\n')}\n</relevant_memories>`;
+  const sourceAttr = source ? ` source="${source}"` : '';
+  let block = `<relevant_memories${sourceAttr}>\n${lines.join('\n')}\n</relevant_memories>`;
   if (block.length > config.maxChars) {
     block = `${block.slice(0, Math.max(0, config.maxChars - 3))}...`;
   }
@@ -22,10 +23,10 @@ export async function runAutoRecall(params: {
   config: AutoRecallConfig;
   debug?: PluginDebugLogger;
   search: (input: { query: string; userId: string; topK: number; filters?: { scope?: string } }) => Promise<SearchResult>;
-}): Promise<string> {
+}): Promise<{ block: string; source: string }> {
   if (!params.config.enabled) {
     params.debug?.basic('auto_recall.skipped', { reason: 'disabled' });
-    return '';
+    return { block: '', source: 'none' };
   }
 
   params.debug?.basic('auto_recall.start', {
@@ -44,10 +45,10 @@ export async function runAutoRecall(params: {
 
   if (!result.memories.length) {
     params.debug?.basic('auto_recall.empty', { source: result.source });
-    return '';
+    return { block: '', source: result.source };
   }
 
-  const block = buildAutoRecallBlock(result.memories, params.config);
+  const block = buildAutoRecallBlock(result.memories, params.config, result.source);
   params.debug?.basic('auto_recall.done', {
     source: result.source,
     hits: result.memories.length,
@@ -60,5 +61,5 @@ export async function runAutoRecall(params: {
       ...summarizeText(memory.text),
     });
   });
-  return block;
+  return { block, source: result.source };
 }

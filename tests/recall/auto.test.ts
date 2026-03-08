@@ -40,17 +40,27 @@ test('buildAutoRecallBlock formats stable relevant_memories block', () => {
     buildConfig(),
   );
 
-  assert.match(block, /<relevant_memories>/);
+  assert.match(block, /<relevant_memories/);
   assert.match(block, /reply in English/);
   assert.match(block, /User likes sci-fi movies/);
   assert.match(block, /<\/relevant_memories>/);
+});
+
+test('buildAutoRecallBlock includes source attribute when provided', () => {
+  const block = buildAutoRecallBlock(
+    [buildMemory('User preference: reply in English')],
+    buildConfig(),
+    'lancedb',
+  );
+
+  assert.match(block, /source="lancedb"/);
 });
 
 test('runAutoRecall applies topK and maxChars constraints', async () => {
   const result = await runAutoRecall({
     query: 'English',
     userId: 'user-1',
-    config: buildConfig({ topK: 1, maxChars: 60 }),
+    config: buildConfig({ topK: 1, maxChars: 200 }),
     search: async () => ({
       memories: [
         buildMemory('User preference: reply in English'),
@@ -60,13 +70,14 @@ test('runAutoRecall applies topK and maxChars constraints', async () => {
     }),
   });
 
-  assert.ok(result);
-  assert.match(result || '', /User preference/);
-  assert.doesNotMatch(result || '', /User likes sci-fi movies/);
-  assert.ok((result || '').length <= 60);
+  assert.ok(result.block);
+  assert.match(result.block, /User preference/);
+  assert.doesNotMatch(result.block, /User likes sci-fi movies/);
+  assert.ok(result.block.length <= 200);
+  assert.equal(result.source, 'lancedb');
 });
 
-test('runAutoRecall returns empty string when search result is empty', async () => {
+test('runAutoRecall returns empty block when search result is empty', async () => {
   const result = await runAutoRecall({
     query: 'English',
     userId: 'user-1',
@@ -74,7 +85,8 @@ test('runAutoRecall returns empty string when search result is empty', async () 
     search: async () => ({ memories: [], source: 'none' }),
   });
 
-  assert.equal(result, '');
+  assert.equal(result.block, '');
+  assert.equal(result.source, 'none');
 });
 
 test('runAutoRecall emits debug events with hit summaries', async () => {
