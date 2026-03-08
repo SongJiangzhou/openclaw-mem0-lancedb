@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -117,6 +117,26 @@ test('register logs plugin version to host logger', async () => {
   } as any);
 
   assert.ok(messages.some((msg) => msg.includes('v0.1.0')));
+});
+
+test('register includes plugin version in structured debug log file', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'index-debug-log-'));
+
+  try {
+    register({
+      pluginConfig: {
+        debug: { mode: 'basic', logDir: dir },
+      },
+      registerTool() {},
+    } as any);
+
+    const date = new Date().toISOString().slice(0, 10);
+    const content = readFileSync(join(dir, `${date}.log`), 'utf-8');
+    assert.match(content, /plugin\.register/);
+    assert.match(content, /"pluginVersion":"0\.1\.0"/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('before_prompt_build auto-recall hook returns prependContext when memories are found', async () => {
@@ -265,6 +285,87 @@ test('auto-capture hook syncs extracted memories into local storage after mem0 c
     assert.equal(records.length, 1);
     assert.equal(records[0]?.text, 'User prefers replies in English');
     assert.equal(records[0]?.mem0?.event_id, 'evt-capture');
+  } finally {
+    global.fetch = originalFetch;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('before_prompt_build surfaces pending capture notification from previous successful turn', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'index-auto-capture-note-'));
+  const hooks: Array<{ name: string; handler: Function }> = [];
+  const originalFetch = global.fetch;
+
+  try {
+    global.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/v1/memories/')) {
+        return {
+          ok: true,
+          json: async () => ([
+            {
+              id: 'mem0-captured-1',
+              data: { memory: 'User enjoys a certain food' },
+              event: 'ADD',
+            },
+          ]),
+        };
+      }
+      throw new Error(`unexpected fetch url: ${url}`);
+    }) as typeof fetch;
+
+    register({
+      pluginConfig: {
+        lancedbPath: join(dir, 'lancedb'),
+        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+        outboxDbPath: join(dir, 'outbox.json'),
+        mem0: {
+          mode: 'remote',
+          baseUrl: 'https://api.mem0.ai',
+          apiKey: 'test-key',
+        },
+        embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+        autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
+        autoCapture: {
+          enabled: true,
+          scope: 'long-term',
+          requireAssistantReply: true,
+          maxCharsPerMessage: 2000,
+        },
+      },
+      registerTool() {},
+      registerHook(name: string, handler: Function) {
+        hooks.push({ name, handler });
+      },
+    } as any);
+
+    const captureHook = hooks.find((entry) => entry.name === 'agent_end');
+    const recallHook = hooks.find((entry) => entry.name === 'before_prompt_build');
+    assert.ok(captureHook);
+    assert.ok(recallHook);
+
+    await captureHook?.handler(
+      {
+        messages: [
+          { role: 'user', content: 'I enjoy a certain food.' },
+          { role: 'assistant', content: 'Noted. You enjoy a certain food.' },
+        ],
+        success: true,
+      },
+      { agentId: 'main', sessionKey: 'test-session' },
+    );
+
+    const result = await recallHook?.handler(
+      {
+        prompt: '我喜欢吃什么',
+        messages: [{ role: 'user', content: '我喜欢吃什么' }],
+      },
+      { agentId: 'main', sessionKey: 'test-session' },
+    );
+
+    const prependContext = result?.prependContext || '';
+    assert.match(prependContext, /<capture via="mem0" count="1" synced="lancedb">/);
+    assert.match(prependContext, /User enjoys a certain food/);
   } finally {
     global.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });

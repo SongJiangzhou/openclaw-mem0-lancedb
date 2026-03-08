@@ -130,6 +130,7 @@ export default function register(api: OpenClawApi) {
   const customGet = new MemoryGetTool(cfg);
 
   debug.basic('plugin.register', {
+    pluginVersion: PLUGIN_VERSION,
     mem0Mode: cfg.mem0Mode,
     mem0BaseUrl: cfg.mem0BaseUrl,
     autoRecallEnabled: cfg.autoRecall.enabled,
