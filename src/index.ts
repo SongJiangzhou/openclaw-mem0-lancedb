@@ -164,7 +164,11 @@ export default function register(api: OpenClawApi) {
     },
     async execute(_id: string, params: any) {
       const result = await customSearch.execute({ userId: 'default', ...params });
-      return textResult(`memory_search: source=${result.source}, hits=${result.memories.length}`, result);
+      const summary = result.memories
+        .map((m: any, i: number) => `[${i + 1}] (${m.scope || 'long-term'}) ${m.text}`)
+        .join('\n');
+      const header = `memory_search: source=${result.source}, hits=${result.memories.length}`;
+      return textResult(result.memories.length > 0 ? `${header}\n${summary}` : header, result);
     },
   });
 
