@@ -148,7 +148,7 @@ export default function register(api: OpenClawApi) {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Search query' },
-        userId: { type: 'string', description: 'User identifier', default: 'railgun' },
+        userId: { type: 'string', description: 'User identifier', default: 'default' },
         topK: { type: 'number', default: 5, description: 'Number of results' },
         filters: {
           type: 'object',
@@ -162,7 +162,7 @@ export default function register(api: OpenClawApi) {
       required: ['query'],
     },
     async execute(_id: string, params: any) {
-      const result = await customSearch.execute({ userId: 'railgun', ...params });
+      const result = await customSearch.execute({ userId: 'default', ...params });
       return textResult(`memory_search: source=${result.source}, hits=${result.memories.length}`, result);
     },
   });
@@ -250,7 +250,7 @@ export default function register(api: OpenClawApi) {
 
       return runAutoRecall({
         query: String(latestUserMessage),
-        userId: context?.userId || 'railgun',
+        userId: context?.userId || 'default',
         config: cfg.autoRecall,
         debug,
         search: (params) => customSearch.execute(params),
@@ -261,7 +261,7 @@ export default function register(api: OpenClawApi) {
   if (cfg.autoCapture.enabled && typeof api.registerHook === 'function') {
     api.registerHook('agent_end', async (context: any) => {
       const payload = buildAutoCapturePayload({
-        userId: context?.userId || 'railgun',
+        userId: context?.userId || 'default',
         runId: context?.runId || null,
         latestUserMessage: context?.latestUserMessage || '',
         latestAssistantMessage: context?.latestAssistantMessage || '',

@@ -40,7 +40,7 @@ export class Mem0Poller {
     try {
       this.debug?.basic('mem0_poller.start', { baseUrl: this.config.mem0BaseUrl, mode: this.config.mem0Mode });
       const url = new URL(`${this.config.mem0BaseUrl}/v1/memories/`);
-      url.searchParams.set('user_id', 'railgun');
+      url.searchParams.set('user_id', 'default');
       
       const response = await fetch(url.toString(), {
         method: 'GET',
@@ -71,7 +71,7 @@ export class Mem0Poller {
         await adapter.upsertMemory({
           memory_uid: memoryUid,
           memory: {
-            user_id: mem.user_id || 'railgun',
+            user_id: mem.user_id || 'default',
             run_id: mem.run_id || '',
             scope: mem.metadata?.scope || 'long-term',
             text: mem.memory || mem.text || '',
