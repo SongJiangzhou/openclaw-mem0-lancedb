@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import * as lancedb from '@lancedb/lancedb';
 
 import { openMemoryTable } from '../../src/db/table';
 import { EmbeddingMigrationWorker } from '../../src/hot/migration-worker';
@@ -65,6 +66,32 @@ test('migration worker moves legacy rows into the current-dimension table', asyn
     assert.equal(migratedRows.length, 1);
     assert.equal(migratedRows[0]?.vector.length, 16);
     assert.equal(legacyRows.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migration worker drops a legacy table after all rows are migrated out', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'migration-worker-'));
+
+  try {
+    const legacyTable = await openMemoryTable(dir, 768);
+    await legacyTable.add([makeLegacyRow()]);
+
+    const worker = new EmbeddingMigrationWorker({
+      ...baseConfig,
+      lancedbPath: dir,
+      outboxDbPath: join(dir, 'outbox.json'),
+      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+    });
+
+    await worker.runOnce();
+
+    const db = await lancedb.connect(dir);
+    const tableNames = await db.tableNames();
+
+    assert.equal(tableNames.includes('memory_records_d768'), false);
+    assert.equal(tableNames.includes('memory_records'), true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

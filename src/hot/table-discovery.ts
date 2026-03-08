@@ -7,11 +7,14 @@ export interface MemoryTableInfo {
   name: string;
 }
 
-export async function discoverMemoryTables(dbPath: string, currentDim?: number): Promise<MemoryTableInfo[]> {
-  const resolvedPath = dbPath.startsWith('~/')
+export function resolveLanceDbPath(dbPath: string): string {
+  return dbPath.startsWith('~/')
     ? path.join(os.homedir(), dbPath.slice(2))
     : dbPath;
+}
 
+export async function discoverMemoryTables(dbPath: string, currentDim?: number): Promise<MemoryTableInfo[]> {
+  const resolvedPath = resolveLanceDbPath(dbPath);
   const db = await lancedb.connect(resolvedPath);
   const tableNames = await db.tableNames();
   const tables: MemoryTableInfo[] = [];
