@@ -185,42 +185,36 @@ function loadJson(filePath) {
 
 export function buildDefaultPluginConfig(existingConfig = {}) {
   const existingMem0 = existingConfig?.mem0 || {};
-  const existingAutoRecall = existingConfig?.autoRecall || {};
-  const existingAutoCapture = existingConfig?.autoCapture || {};
-  const existingDebug = existingConfig?.debug || {};
 
   return {
     lancedbPath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_lancedb'),
     mem0: {
-      mode: existingMem0.mode || 'remote',
-      baseUrl: existingMem0.baseUrl || 'https://api.mem0.ai',
+      mode: 'remote',
+      baseUrl: 'https://api.mem0.ai',
       apiKey: existingMem0.mode === 'remote' ? existingMem0.apiKey || '' : '',
     },
     outboxDbPath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_outbox.db'),
     auditStorePath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_audit', 'memory_records.jsonl'),
     debug: {
-      mode: existingDebug.mode || 'basic',
+      mode: 'basic',
     },
     autoRecall: {
-      enabled: existingAutoRecall.enabled ?? true,
-      topK: existingAutoRecall.topK || 8,
-      maxChars: existingAutoRecall.maxChars || 1400,
-      scope: existingAutoRecall.scope || 'all',
+      enabled: true,
+      topK: 8,
+      maxChars: 1400,
+      scope: 'all',
     },
     autoCapture: {
-      enabled: existingAutoCapture.enabled ?? false,
-      scope: existingAutoCapture.scope || 'long-term',
-      requireAssistantReply: existingAutoCapture.requireAssistantReply ?? true,
-      maxCharsPerMessage: existingAutoCapture.maxCharsPerMessage || 2000,
+      enabled: false,
+      scope: 'long-term',
+      requireAssistantReply: true,
+      maxCharsPerMessage: 2000,
     },
   };
 }
 
 export async function promptForConfig(strings, existingConfig = {}) {
   const existingMem0 = existingConfig?.mem0 || {};
-  const existingAutoRecall = existingConfig?.autoRecall || {};
-  const existingAutoCapture = existingConfig?.autoCapture || {};
-  const existingDebug = existingConfig?.debug || {};
   const mem0Mode = await select({
     message: strings.mem0Mode,
     options: [
@@ -228,14 +222,14 @@ export async function promptForConfig(strings, existingConfig = {}) {
       { value: 'remote', label: strings.choices.mem0Remote },
       { value: 'disabled', label: strings.choices.mem0Disabled },
     ],
-    initialValue: existingMem0.mode || 'remote',
+    initialValue: 'remote',
   });
   if (isCancel(mem0Mode)) process.exit(1);
 
-  let mem0BaseUrl = existingMem0.baseUrl || 'https://api.mem0.ai';
+  let mem0BaseUrl = 'https://api.mem0.ai';
   let mem0ApiKey = '';
   if (mem0Mode === 'local') {
-    const value = await text({ message: strings.mem0LocalUrl, defaultValue: existingMem0.baseUrl || 'http://127.0.0.1:8000' });
+    const value = await text({ message: strings.mem0LocalUrl, defaultValue: 'http://127.0.0.1:8000' });
     if (isCancel(value)) process.exit(1);
     mem0BaseUrl = value;
   } else if (mem0Mode === 'remote') {
@@ -247,15 +241,11 @@ export async function promptForConfig(strings, existingConfig = {}) {
     mem0ApiKey = value;
   }
 
-  const autoRecallEnabled = await confirm({ message: strings.autoRecall, initialValue: existingAutoRecall.enabled ?? true });
+  const autoRecallEnabled = await confirm({ message: strings.autoRecall, initialValue: true });
   if (isCancel(autoRecallEnabled)) process.exit(1);
-  const autoRecallTopK = autoRecallEnabled
-    ? Number(await text({ message: strings.autoRecallTopK, defaultValue: String(existingAutoRecall.topK || 8) }))
-    : 8;
-  const autoRecallMaxChars = autoRecallEnabled
-    ? Number(await text({ message: strings.autoRecallMaxChars, defaultValue: String(existingAutoRecall.maxChars || 1400) }))
-    : 1400;
-  let autoRecallScope = existingAutoRecall.scope || 'all';
+  const autoRecallTopK = autoRecallEnabled ? Number(await text({ message: strings.autoRecallTopK, defaultValue: '8' })) : 8;
+  const autoRecallMaxChars = autoRecallEnabled ? Number(await text({ message: strings.autoRecallMaxChars, defaultValue: '1400' })) : 1400;
+  let autoRecallScope = 'all';
   if (autoRecallEnabled) {
     autoRecallScope = await select({
       message: strings.autoRecallScope,
@@ -263,16 +253,16 @@ export async function promptForConfig(strings, existingConfig = {}) {
         { value: 'all', label: strings.choices.recallAll },
         { value: 'long-term', label: strings.choices.recallLongTerm },
       ],
-      initialValue: existingAutoRecall.scope || 'all',
+      initialValue: 'all',
     });
     if (isCancel(autoRecallScope)) process.exit(1);
   }
 
-  const autoCaptureEnabled = await confirm({ message: strings.autoCapture, initialValue: existingAutoCapture.enabled ?? false });
+  const autoCaptureEnabled = await confirm({ message: strings.autoCapture, initialValue: false });
   if (isCancel(autoCaptureEnabled)) process.exit(1);
-  let autoCaptureScope = existingAutoCapture.scope || 'long-term';
-  let autoCaptureRequireReply = existingAutoCapture.requireAssistantReply ?? true;
-  let autoCaptureMaxChars = existingAutoCapture.maxCharsPerMessage || 2000;
+  let autoCaptureScope = 'long-term';
+  let autoCaptureRequireReply = true;
+  let autoCaptureMaxChars = 2000;
   if (autoCaptureEnabled) {
     autoCaptureScope = await select({
       message: strings.autoCaptureScope,
@@ -280,17 +270,12 @@ export async function promptForConfig(strings, existingConfig = {}) {
         { value: 'long-term', label: strings.choices.captureLongTerm },
         { value: 'session', label: strings.choices.captureSession },
       ],
-      initialValue: existingAutoCapture.scope || 'long-term',
+      initialValue: 'long-term',
     });
     if (isCancel(autoCaptureScope)) process.exit(1);
-    autoCaptureRequireReply = await confirm({
-      message: strings.autoCaptureRequireReply,
-      initialValue: existingAutoCapture.requireAssistantReply ?? true,
-    });
+    autoCaptureRequireReply = await confirm({ message: strings.autoCaptureRequireReply, initialValue: true });
     if (isCancel(autoCaptureRequireReply)) process.exit(1);
-    autoCaptureMaxChars = Number(
-      await text({ message: strings.autoCaptureMaxChars, defaultValue: String(existingAutoCapture.maxCharsPerMessage || 2000) }),
-    );
+    autoCaptureMaxChars = Number(await text({ message: strings.autoCaptureMaxChars, defaultValue: '2000' }));
   }
 
   const debugChoice = await select({
@@ -305,10 +290,7 @@ export async function promptForConfig(strings, existingConfig = {}) {
   if (isCancel(debugChoice)) process.exit(1);
   let debugLogDir;
   if (debugChoice === 'verbose-file') {
-    const value = await text({
-      message: strings.debugLogDir,
-      defaultValue: existingDebug.logDir || '~/.openclaw/workspace/logs/openclaw-mem0-lancedb',
-    });
+    const value = await text({ message: strings.debugLogDir, defaultValue: '~/.openclaw/workspace/logs/openclaw-mem0-lancedb' });
     if (isCancel(value)) process.exit(1);
     debugLogDir = value;
   }

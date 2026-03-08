@@ -100,10 +100,18 @@ test('buildDefaultPluginConfig preserves an existing remote mem0 api key', async
       baseUrl: 'https://api.mem0.ai',
       apiKey: 'existing-test-key',
     },
+    autoRecall: {
+      enabled: true,
+      topK: 5,
+      maxChars: 800,
+      scope: 'all',
+    },
   });
 
   assert.equal(config.mem0.mode, 'remote');
   assert.equal(config.mem0.apiKey, 'existing-test-key');
+  assert.equal(config.autoRecall.topK, 8);
+  assert.equal(config.autoRecall.maxChars, 1400);
 });
 
 test('install.mjs --yes keeps an existing remote mem0 api key', () => {
@@ -162,4 +170,6 @@ test('install.mjs --yes keeps an existing remote mem0 api key', () => {
   const config = JSON.parse(readFileSync(join(homeDir, '.openclaw', 'openclaw.json'), 'utf8'));
   const pluginConfig = config.plugins.entries['openclaw-mem0-lancedb']?.config;
   assert.equal(pluginConfig?.mem0?.apiKey, 'existing-test-key');
+  assert.equal(pluginConfig?.autoRecall?.topK, 8);
+  assert.equal(pluginConfig?.autoRecall?.maxChars, 1400);
 });
