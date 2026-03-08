@@ -7,12 +7,19 @@ import test from 'node:test';
 import { FileAuditStore } from '../src/audit/store';
 import register, { resolveConfig } from '../src/index';
 
+function pendingCapturePath(sessionKey: string): string {
+  const safe = sessionKey.replace(/[^a-z0-9]/gi, '_').slice(0, 64);
+  return join(tmpdir(), `mem0-cap-${safe}.json`);
+}
+
 test('resolveConfig sets embedding migration defaults', async () => {
   const config = resolveConfig();
 
   assert.equal(config.embeddingMigration?.enabled, true);
   assert.equal(config.embeddingMigration?.intervalMs, 15 * 60 * 1000);
   assert.equal(config.embeddingMigration?.batchSize, 20);
+  assert.equal(config.autoRecall.topK, 8);
+  assert.equal(config.autoRecall.maxChars, 1400);
 });
 
 test('resolveConfig respects embedding migration overrides', async () => {
@@ -139,7 +146,7 @@ test('register includes plugin version in structured debug log file', async () =
   }
 });
 
-test('before_prompt_build auto-recall hook returns prependContext when memories are found', async () => {
+test('before_prompt_build auto-recall remains silent even when memories are found', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
 
   register({
@@ -363,12 +370,12 @@ test('before_prompt_build surfaces pending capture notification from previous su
       { agentId: 'main', sessionKey: 'test-session' },
     );
 
-    const prependContext = result?.prependContext || '';
-    assert.match(prependContext, /<capture via="mem0" count="1" synced="lancedb">/);
-    assert.match(prependContext, /User enjoys a certain food/);
+    assert.equal(result, null);
+    assert.equal(readFileSync(pendingCapturePath('test-session'), 'utf-8').includes('User enjoys a certain food'), true);
   } finally {
     global.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });
+    rmSync(pendingCapturePath('test-session'), { force: true });
   }
 });
 
@@ -447,10 +454,15 @@ test('auto-capture does not send prior capture notification back to mem0 on the 
       { agentId: 'main', sessionKey: 'test-session' },
     );
 
+    assert.equal(injected, null);
+
+    const injectedContext =
+      injected && typeof injected === 'object' && 'prependContext' in injected ? String((injected as any).prependContext || '') : '';
+
     await captureHook?.handler(
       {
         messages: [
-          { role: 'user', content: `${injected?.prependContext || ''}\n\nI enjoy another food.` },
+          { role: 'user', content: `${injectedContext}\n\nI enjoy another food.` },
           { role: 'assistant', content: 'Noted. You enjoy another food.' },
         ],
         success: true,
@@ -464,6 +476,90 @@ test('auto-capture does not send prior capture notification back to mem0 on the 
   } finally {
     global.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('before_prompt_build clears pending capture notifications without surfacing them to the user', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'index-auto-capture-silent-'));
+  const hooks: Array<{ name: string; handler: Function }> = [];
+  const sessionKey = 'silent-session';
+  const originalFetch = global.fetch;
+
+  try {
+    global.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/v1/memories/')) {
+        return {
+          ok: true,
+          json: async () => ([
+            {
+              id: 'mem0-captured-1',
+              data: { memory: 'User likes a dessert brand' },
+              event: 'ADD',
+            },
+          ]),
+        };
+      }
+      throw new Error(`unexpected fetch url: ${url}`);
+    }) as typeof fetch;
+
+    register({
+      pluginConfig: {
+        lancedbPath: join(dir, 'lancedb'),
+        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+        outboxDbPath: join(dir, 'outbox.json'),
+        mem0: {
+          mode: 'remote',
+          baseUrl: 'https://api.mem0.ai',
+          apiKey: 'test-key',
+        },
+        embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+        autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
+        autoCapture: {
+          enabled: true,
+          scope: 'long-term',
+          requireAssistantReply: true,
+          maxCharsPerMessage: 2000,
+        },
+      },
+      registerTool() {},
+      registerHook(name: string, handler: Function) {
+        hooks.push({ name, handler });
+      },
+    } as any);
+
+    const captureHook = hooks.find((entry) => entry.name === 'agent_end');
+    const recallHook = hooks.find((entry) => entry.name === 'before_prompt_build');
+    assert.ok(captureHook);
+    assert.ok(recallHook);
+
+    await captureHook?.handler(
+      {
+        messages: [
+          { role: 'user', content: 'I like a dessert brand.' },
+          { role: 'assistant', content: 'Noted. You like a dessert brand.' },
+        ],
+        success: true,
+      },
+      { agentId: 'main', sessionKey },
+    );
+
+    assert.equal(readFileSync(pendingCapturePath(sessionKey), 'utf-8').includes('User likes a dessert brand'), true);
+
+    const result = await recallHook?.handler(
+      {
+        prompt: 'hello again',
+        messages: [{ role: 'user', content: 'hello again' }],
+      },
+      { agentId: 'main', sessionKey },
+    );
+
+    assert.equal(result, null);
+    assert.throws(() => readFileSync(pendingCapturePath(sessionKey), 'utf-8'));
+  } finally {
+    global.fetch = originalFetch;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(pendingCapturePath(sessionKey), { force: true });
   }
 });
 

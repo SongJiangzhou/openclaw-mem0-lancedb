@@ -56,15 +56,15 @@
         "properties": {
           "enabled": {
             "type": "boolean",
-            "default": false
+            "default": true
           },
           "topK": {
             "type": "number",
-            "default": 5
+            "default": 8
           },
           "maxChars": {
             "type": "number",
-            "default": 800
+            "default": 1400
           },
           "scope": {
             "type": "string",

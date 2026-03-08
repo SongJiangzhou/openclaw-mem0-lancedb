@@ -51,8 +51,8 @@ export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): Plu
     auditStorePath: raw?.auditStorePath || '~/.openclaw/workspace/data/memory_audit/memory_records.jsonl',
     autoRecall: {
       enabled: raw?.autoRecall?.enabled ?? true,
-      topK: raw?.autoRecall?.topK || 5,
-      maxChars: raw?.autoRecall?.maxChars || 800,
+      topK: raw?.autoRecall?.topK || 8,
+      maxChars: raw?.autoRecall?.maxChars || 1400,
       scope: raw?.autoRecall?.scope || 'all',
     },
     autoCapture: {
@@ -263,7 +263,7 @@ export default function register(api: OpenClawApi) {
         return null;
       }
 
-      const { block, source } = await runAutoRecall({
+      await runAutoRecall({
         query: String(latestUserMessage),
         userId: 'default',
         config: cfg.autoRecall,
@@ -271,27 +271,12 @@ export default function register(api: OpenClawApi) {
         search: (params) => customSearch.execute(params),
       });
 
-      const parts: string[] = [];
-
       // Surface pending capture notification from previous turn
-      const captureNotification = sessionKey ? readAndClearPendingCapture(sessionKey) : null;
-      if (captureNotification) {
-        const syncedAttr = captureNotification.syncedToLancedb ? ' synced="lancedb"' : '';
-        const lines = captureNotification.memories.map((m: string) => `- ${m}`).join('\n');
-        parts.push(
-          `<capture via="${captureNotification.via}" count="${captureNotification.count}"${syncedAttr}>\n${lines}\n</capture>`,
-        );
+      if (sessionKey) {
+        readAndClearPendingCapture(sessionKey);
       }
 
-      if (block) {
-        parts.push(block);
-      }
-
-      if (!parts.length) {
-        return null;
-      }
-
-      return { prependContext: parts.join('\n') };
+      return null;
     }, { name: 'mem0-auto-recall' });
   }
 

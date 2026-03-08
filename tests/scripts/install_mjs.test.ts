@@ -56,6 +56,8 @@ test('install.mjs --yes writes defaults into openclaw.json', () => {
   assert.equal(pluginConfig?.mem0?.mode, 'remote');
   assert.equal(pluginConfig?.debug?.mode, 'basic');
   assert.equal(pluginConfig?.autoRecall?.enabled, true);
+  assert.equal(pluginConfig?.autoRecall?.topK, 8);
+  assert.equal(pluginConfig?.autoRecall?.maxChars, 1400);
 });
 
 test('install.mjs --skip-config leaves openclaw.json unchanged', () => {

@@ -195,8 +195,8 @@ function buildDefaultPluginConfig() {
     },
     autoRecall: {
       enabled: true,
-      topK: 5,
-      maxChars: 800,
+      topK: 8,
+      maxChars: 1400,
       scope: 'all',
     },
     autoCapture: {
@@ -233,8 +233,8 @@ async function promptForConfig(strings) {
 
   const autoRecallEnabled = await confirm({ message: strings.autoRecall, initialValue: true });
   if (isCancel(autoRecallEnabled)) process.exit(1);
-  const autoRecallTopK = autoRecallEnabled ? Number(await text({ message: strings.autoRecallTopK, defaultValue: '5' })) : 5;
-  const autoRecallMaxChars = autoRecallEnabled ? Number(await text({ message: strings.autoRecallMaxChars, defaultValue: '800' })) : 800;
+  const autoRecallTopK = autoRecallEnabled ? Number(await text({ message: strings.autoRecallTopK, defaultValue: '8' })) : 8;
+  const autoRecallMaxChars = autoRecallEnabled ? Number(await text({ message: strings.autoRecallMaxChars, defaultValue: '1400' })) : 1400;
   let autoRecallScope = 'all';
   if (autoRecallEnabled) {
     autoRecallScope = await select({
