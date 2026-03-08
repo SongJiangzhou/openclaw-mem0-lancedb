@@ -15,3 +15,7 @@ temp/
 memory_lancedb/
 *.lance
 *.db
+
+# Mem0 Local Server
+.venv/
+.mem0_local_db/
