@@ -84,13 +84,13 @@ test('register installs auto-recall hook when enabled and hook api exists', asyn
     registerTool(tool: any) {
       tools.push(tool.name);
     },
-    registerHook(name: string, handler: Function) {
+    on(name: string, handler: Function) {
       hooks.push({ name, handler });
     },
   } as any);
 
   assert.ok(tools.includes('memory_search'));
-  assert.ok(hooks.some((hook) => hook.name === 'agent_start'));
+  assert.ok(hooks.some((hook) => hook.name === 'before_prompt_build'));
 });
 
 test('register does not throw when auto-recall is enabled but no hook api exists', async () => {
@@ -102,6 +102,38 @@ test('register does not throw when auto-recall is enabled but no hook api exists
       registerTool() {},
     } as any);
   });
+});
+
+test('before_prompt_build auto-recall hook returns prependContext when memories are found', async () => {
+  const hooks: Array<{ name: string; handler: Function }> = [];
+
+  register({
+    pluginConfig: {
+      lancedbPath: join(mkdtempSync(join(tmpdir(), 'index-auto-recall-')), 'lancedb'),
+      embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+      autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
+    },
+    registerTool() {},
+    on(name: string, handler: Function) {
+      hooks.push({ name, handler });
+    },
+  } as any);
+
+  const hook = hooks.find((entry) => entry.name === 'before_prompt_build');
+  assert.ok(hook);
+
+  const result = await hook?.handler(
+    {},
+    {
+      userId: 'user-1',
+      latestUserMessage: 'What language should you use?',
+      messages: [
+        { role: 'user', content: 'Please always reply in English' },
+      ],
+    },
+  );
+
+  assert.equal(result, null);
 });
 
 test('register installs auto-capture hook when enabled and hook api exists', async () => {
@@ -195,12 +227,20 @@ test('auto-capture hook syncs extracted memories into local storage after mem0 c
     const hook = hooks.find((entry) => entry.name === 'agent_end');
     assert.ok(hook);
 
-    const result = await hook?.handler({
-      userId: 'user-1',
-      runId: 'run-1',
-      latestUserMessage: 'Please reply in English from now on',
-      latestAssistantMessage: 'Understood. I will reply in English from now on.',
-    });
+    // Real agent_end signature: handler(event, ctx)
+    const result = await hook?.handler(
+      {
+        messages: [
+          { role: 'user', content: 'Please reply in English from now on' },
+          { role: 'assistant', content: 'Understood. I will reply in English from now on.' },
+        ],
+        success: true,
+      },
+      {
+        agentId: 'main',
+        sessionKey: 'test-session',
+      },
+    );
 
     assert.equal(result?.confirmation?.status, 'confirmed');
     assert.equal(result?.synced?.synced, 1);
@@ -213,5 +253,65 @@ test('auto-capture hook syncs extracted memories into local storage after mem0 c
   } finally {
     global.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('auto-capture hook strips injected recall blocks before sanitization', async () => {
+  const hooks: Array<{ name: string; handler: Function }> = [];
+
+  register({
+    pluginConfig: {
+      lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
+      auditStorePath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'audit', 'memory_records.jsonl'),
+      outboxDbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'outbox.json'),
+      mem0: { mode: 'remote', baseUrl: 'https://api.mem0.ai', apiKey: 'test-key' },
+      embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+      autoCapture: { enabled: true, scope: 'long-term', requireAssistantReply: false, maxCharsPerMessage: 2000 },
+    },
+    registerTool() {},
+    registerHook(name: string, handler: Function) {
+      hooks.push({ name, handler });
+    },
+  } as any);
+
+  const hook = hooks.find((entry) => entry.name === 'agent_end');
+  assert.ok(hook);
+
+  // User message contains an injected <relevant_memories> block with "password" keyword.
+  // The actual user turn is clean, so capture should proceed.
+  const userMsgWithInjection =
+    '<relevant_memories>\n- User wants to remember the test password abc123\n</relevant_memories>\nPlease reply in English from now on';
+
+  let capturedPayload: unknown = null;
+  const originalFetch = global.fetch;
+  global.fetch = (async (url: string, init: any) => {
+    if (url.includes('/v1/memories/') && init?.method === 'POST') {
+      capturedPayload = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ event_id: 'evt-x' }) };
+    }
+    // stub out remaining calls
+    return { ok: true, json: async () => ({ status: 'completed', items: [] }) };
+  }) as typeof fetch;
+
+  try {
+    await hook.handler(
+      {
+        messages: [
+          { role: 'user', content: userMsgWithInjection },
+          { role: 'assistant', content: 'Understood.' },
+        ],
+        success: true,
+      },
+      { agentId: 'main', sessionKey: 'test-session' },
+    );
+
+    // Payload should have been built (not null) and the user message should be stripped
+    assert.ok(capturedPayload !== null, 'expected capture payload to be submitted');
+    const messages = (capturedPayload as any)?.messages as Array<{ role: string; content: string }>;
+    const userContent = messages?.find((m) => m.role === 'user')?.content ?? '';
+    assert.ok(!userContent.includes('<relevant_memories>'), 'injected block should be stripped from captured text');
+    assert.ok(userContent.includes('Please reply in English'), 'actual user intent should be preserved');
+  } finally {
+    global.fetch = originalFetch;
   }
 });

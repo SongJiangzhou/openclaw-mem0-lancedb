@@ -29,6 +29,7 @@ type OpenClawApi = {
   pluginConfig?: Partial<PluginConfig>;
   registerTool: (tool: any, options?: any) => void;
   registerHook?: (events: string | string[], handler: (...args: any[]) => any, opts?: any) => void;
+  on?: (event: string, handler: (...args: any[]) => any, opts?: any) => void;
 };
 
 export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): PluginConfig {
@@ -237,34 +238,56 @@ export default function register(api: OpenClawApi) {
     },
   );
 
-  if (cfg.autoRecall.enabled && typeof api.registerHook === 'function') {
-    api.registerHook('agent_start', async (context: any) => {
-      const latestUserMessage =
-        context?.latestUserMessage ||
-        context?.input ||
-        context?.message ||
-        '';
+  if (cfg.autoRecall.enabled) {
+    registerLifecycleHook(api, 'before_prompt_build', async (...args: any[]) => {
+      // before_prompt_build signature: handler(event, ctx)
+      // event: { prompt: string, messages: unknown[] }
+      // ctx: { agentId?, sessionKey?, sessionId?, workspaceDir? }
+      const event = args.length >= 2 ? args[0] : args[0];
+      const latestUserMessage = event?.prompt || getLatestUserMessage(event);
       if (!latestUserMessage) {
-        return '';
+        debug.basic('auto_recall.skipped', { reason: 'no_query' });
+        return null;
       }
 
-      return runAutoRecall({
+      const block = await runAutoRecall({
         query: String(latestUserMessage),
-        userId: context?.userId || 'default',
+        userId: 'default',
         config: cfg.autoRecall,
         debug,
         search: (params) => customSearch.execute(params),
       });
+
+      if (!block) {
+        return null;
+      }
+
+      return {
+        prependContext: block,
+      };
     }, { name: 'mem0-auto-recall' });
   }
 
-  if (cfg.autoCapture.enabled && typeof api.registerHook === 'function') {
-    api.registerHook('agent_end', async (context: any) => {
+  if (cfg.autoCapture.enabled) {
+    registerLifecycleHook(api, 'agent_end', async (...args: any[]) => {
+      // agent_end signature: handler(event, ctx)
+      // event: { messages: unknown[], success: boolean, error?: string, durationMs?: number }
+      // ctx: { agentId?, sessionKey?, sessionId?, workspaceDir?, messageProvider? }
+      const event = args.length >= 2 ? args[0] : args[0];
+      const ctx = args.length >= 2 ? args[1] : {};
+      const { latestUserMessage, latestAssistantMessage } = extractLatestMessages(event?.messages);
+      debug.basic('auto_capture.hook_invoked', {
+        event: 'agent_end',
+        messageCount: Array.isArray(event?.messages) ? event.messages.length : 0,
+        hasLatestUserMessage: Boolean(latestUserMessage),
+        hasLatestAssistantMessage: Boolean(latestAssistantMessage),
+        success: event?.success,
+      });
       const payload = buildAutoCapturePayload({
-        userId: context?.userId || 'default',
-        runId: context?.runId || null,
-        latestUserMessage: context?.latestUserMessage || '',
-        latestAssistantMessage: context?.latestAssistantMessage || '',
+        userId: 'default',
+        runId: null,
+        latestUserMessage,
+        latestAssistantMessage,
         config: cfg.autoCapture,
       });
       if (!payload) {
@@ -315,4 +338,79 @@ export default function register(api: OpenClawApi) {
   }
 
   api.logger?.info?.('[openclaw-mem0-lancedb] registered');
+}
+
+function extractLatestMessages(messages: unknown[]): { latestUserMessage: string; latestAssistantMessage: string } {
+  let latestUserMessage = '';
+  let latestAssistantMessage = '';
+  if (!Array.isArray(messages)) return { latestUserMessage, latestAssistantMessage };
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as any;
+    const role = String(msg?.role || msg?.author || '');
+    const raw = extractTextContent(msg?.content);
+    const content = stripInjectedBlocks(raw).trim();
+    if (!content) continue;
+    if (role === 'assistant' && !latestAssistantMessage) {
+      latestAssistantMessage = content;
+    } else if (role === 'user' && !latestUserMessage) {
+      latestUserMessage = content;
+    }
+    if (latestUserMessage && latestAssistantMessage) break;
+  }
+
+  return { latestUserMessage, latestAssistantMessage };
+}
+
+/**
+ * Remove auto-recall injected blocks from message text before capture.
+ * Prevents recall context (which may contain restricted keywords like "password")
+ * from poisoning the sanitizer and causing legitimate turns to be dropped.
+ */
+function stripInjectedBlocks(text: string): string {
+  return text.replace(/<relevant_memories>[\s\S]*?<\/relevant_memories>/g, '');
+}
+
+function extractTextContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (part?.type === 'text' && typeof part.text === 'string') return part.text;
+    }
+  }
+  return '';
+}
+
+function registerLifecycleHook(
+  api: OpenClawApi,
+  event: string,
+  handler: (...args: any[]) => any,
+  opts?: any,
+): void {
+  if (typeof api.on === 'function') {
+    api.on(event, handler, opts);
+    return;
+  }
+
+  if (typeof api.registerHook === 'function') {
+    api.registerHook(event, handler, opts);
+  }
+}
+
+function getLatestUserMessage(context: any): string {
+  if (context?.latestUserMessage || context?.input || context?.message) {
+    return String(context?.latestUserMessage || context?.input || context?.message || '');
+  }
+
+  if (Array.isArray(context?.messages)) {
+    for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+      const message = context.messages[index];
+      const role = String(message?.role || message?.author || '');
+      if (role === 'user' && message?.content) {
+        return String(message.content);
+      }
+    }
+  }
+
+  return '';
 }
