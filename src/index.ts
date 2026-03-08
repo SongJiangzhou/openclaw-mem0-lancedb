@@ -9,7 +9,7 @@ import { HttpMem0Client } from './control/mem0';
 import { runAutoRecall } from './recall/auto';
 import { Mem0Poller } from './bridge/poller';
 import { EmbeddingMigrationWorker } from './hot/migration-worker';
-import type { Mem0Mode, PluginConfig } from './types';
+import type { PluginConfig } from './types';
 
 function textResult(summary: string, details: any) {
   return {
@@ -63,32 +63,15 @@ export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): Plu
 }
 
 function resolveMem0Config(raw?: Partial<PluginConfig>): NonNullable<PluginConfig['mem0']> {
-  const explicitBaseUrl = raw?.mem0?.baseUrl || raw?.mem0BaseUrl || 'https://api.mem0.ai';
-  const explicitApiKey = raw?.mem0?.apiKey || raw?.mem0ApiKey || '';
-  const explicitMode = raw?.mem0?.mode || raw?.mem0Mode;
+  const explicitBaseUrl = raw?.mem0?.baseUrl || 'https://api.mem0.ai';
+  const explicitApiKey = raw?.mem0?.apiKey || '';
+  const explicitMode = raw?.mem0?.mode || 'remote';
 
   return {
-    mode: explicitMode || inferLegacyMem0Mode(explicitBaseUrl),
+    mode: explicitMode,
     baseUrl: explicitBaseUrl,
     apiKey: explicitApiKey,
   };
-}
-
-function inferLegacyMem0Mode(baseUrl: string): Mem0Mode {
-  if (!baseUrl) {
-    return 'disabled';
-  }
-
-  try {
-    const url = new URL(baseUrl);
-    if (['localhost', '127.0.0.1', '0.0.0.0'].includes(url.hostname)) {
-      return 'local';
-    }
-  } catch {
-    // Ignore invalid URLs and keep the remote default for backward compatibility.
-  }
-
-  return 'remote';
 }
 
 function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): PluginConfig['embedding'] {

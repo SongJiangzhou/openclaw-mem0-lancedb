@@ -51,10 +51,6 @@ test('hasMem0Auth uses explicit remote mode over localhost url', () => {
   assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'http://127.0.0.1:8000', mem0Mode: 'remote' }), false);
 });
 
-test('hasMem0Auth keeps legacy localhost fallback when mode is absent', () => {
-  assert.equal(hasMem0Auth({ mem0ApiKey: '', mem0BaseUrl: 'http://localhost:8000' }), true);
-});
-
 // --- buildMem0Headers ---
 
 test('buildMem0Headers includes Authorization when api key is present', () => {

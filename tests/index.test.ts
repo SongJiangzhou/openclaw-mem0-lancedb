@@ -43,6 +43,17 @@ test('resolveConfig maps nested mem0 config into explicit runtime mode', async (
   assert.equal(config.mem0ApiKey, '');
 });
 
+test('resolveConfig does not read deprecated top-level mem0 auth fields', async () => {
+  const config = resolveConfig({
+    mem0BaseUrl: 'http://127.0.0.1:8000',
+    mem0ApiKey: 'deprecated-key',
+  } as any);
+
+  assert.equal(config.mem0Mode, 'remote');
+  assert.equal(config.mem0BaseUrl, 'https://api.mem0.ai');
+  assert.equal(config.mem0ApiKey, '');
+});
+
 test('register installs auto-recall hook when enabled and hook api exists', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
   const tools: string[] = [];
@@ -143,8 +154,11 @@ test('auto-capture hook syncs extracted memories into local storage after mem0 c
         lancedbPath: join(dir, 'lancedb'),
         auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         outboxDbPath: join(dir, 'outbox.json'),
-        mem0BaseUrl: 'https://api.mem0.ai',
-        mem0ApiKey: 'test-key',
+        mem0: {
+          mode: 'remote',
+          baseUrl: 'https://api.mem0.ai',
+          apiKey: 'test-key',
+        },
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
         autoCapture: {
           enabled: true,

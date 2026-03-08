@@ -295,8 +295,6 @@ try {
     "baseUrl": "${MEM0_BASE_URL}",
     "apiKey": "${MEM0_API_KEY}"
   },
-  "mem0BaseUrl": "${MEM0_BASE_URL}",
-  "mem0ApiKey": "${MEM0_API_KEY}",
   "outboxDbPath": "${HOME}/.openclaw/workspace/data/memory_outbox.db",
   "auditStorePath": "${HOME}/.openclaw/workspace/data/memory_audit/memory_records.jsonl",
   "autoRecall": {

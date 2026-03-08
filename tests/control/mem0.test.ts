@@ -8,6 +8,12 @@ import type { MemoryRecord, PluginConfig } from '../../src/types';
 function buildConfig(): PluginConfig {
   return {
     lancedbPath: '/tmp/lancedb',
+    mem0: {
+      mode: 'remote',
+      baseUrl: 'https://api.mem0.ai',
+      apiKey: 'test-key',
+    },
+    mem0Mode: 'remote',
     mem0BaseUrl: 'https://api.mem0.ai',
     mem0ApiKey: 'test-key',
     outboxDbPath: '/tmp/outbox.json',
@@ -38,7 +44,12 @@ function buildRecord(): MemoryRecord {
 }
 
 test('http mem0 client returns unavailable when api key is missing for cloud base url', async () => {
-  const cfg = { ...buildConfig(), mem0ApiKey: '' };
+  const cfg = {
+    ...buildConfig(),
+    mem0: { mode: 'remote' as const, baseUrl: 'https://api.mem0.ai', apiKey: '' },
+    mem0Mode: 'remote' as const,
+    mem0ApiKey: '',
+  };
   const client = new HttpMem0Client(cfg);
 
   const result = await client.storeMemory(buildRecord());
@@ -55,7 +66,13 @@ test('http mem0 client allows local mem0 base url without api key', async () => 
       json: async () => ({ id: 'mem0-local-1', event_id: 'evt-local-1', hash: 'h-local-1' }),
     };
   }) as unknown as typeof fetch;
-  const cfg = { ...buildConfig(), mem0BaseUrl: 'http://127.0.0.1:8000', mem0ApiKey: '' };
+  const cfg = {
+    ...buildConfig(),
+    mem0: { mode: 'local' as const, baseUrl: 'http://127.0.0.1:8000', apiKey: '' },
+    mem0Mode: 'local' as const,
+    mem0BaseUrl: 'http://127.0.0.1:8000',
+    mem0ApiKey: '',
+  };
   const client = new HttpMem0Client(cfg, fetchStub);
 
   const result = await client.storeMemory(buildRecord());
@@ -73,7 +90,13 @@ test('http mem0 client allows explicit local mode without api key even for remot
       json: async () => ({ id: 'mem0-local-2', event_id: 'evt-local-2', hash: 'h-local-2' }),
     };
   }) as unknown as typeof fetch;
-  const cfg = { ...buildConfig(), mem0BaseUrl: 'https://api.mem0.ai', mem0ApiKey: '', mem0Mode: 'local' as const };
+  const cfg = {
+    ...buildConfig(),
+    mem0: { mode: 'local' as const, baseUrl: 'https://api.mem0.ai', apiKey: '' },
+    mem0BaseUrl: 'https://api.mem0.ai',
+    mem0ApiKey: '',
+    mem0Mode: 'local' as const,
+  };
   const client = new HttpMem0Client(cfg, fetchStub);
 
   const result = await client.storeMemory(buildRecord());

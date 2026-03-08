@@ -35,7 +35,7 @@ export function hasMem0Auth(config: Pick<PluginConfig, 'mem0ApiKey' | 'mem0BaseU
     return Boolean(config.mem0ApiKey);
   }
 
-  return Boolean(config.mem0ApiKey) || isLocalMem0BaseUrl(config.mem0BaseUrl);
+  return false;
 }
 
 /**

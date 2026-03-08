@@ -30,13 +30,6 @@
           }
         }
       },
-      "mem0BaseUrl": {
-        "type": "string",
-        "default": "https://api.mem0.ai"
-      },
-      "mem0ApiKey": {
-        "type": "string"
-      },
       "outboxDbPath": {
         "type": "string",
         "default": "~/.openclaw/workspace/data/outbox.db"
