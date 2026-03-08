@@ -67,7 +67,7 @@ function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): P
     if (p === 'gemini') {
       fallbackModel = 'text-embedding-004';
       defaultDim = 768;
-      defaultUrl = 'https://generativelanguage.googleapis.com';
+      defaultUrl = 'https://generativelanguage.googleapis.com/v1';
     } else if (p === 'ollama') {
       fallbackModel = 'nomic-embed-text';
       defaultDim = 768;

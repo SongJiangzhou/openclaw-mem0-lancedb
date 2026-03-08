@@ -30,7 +30,7 @@ function resolveModel(cfg: EmbeddingConfig) {
     case 'gemini': {
       const google = createGoogleGenerativeAI({
         apiKey: cfg.apiKey,
-        baseURL: cfg.baseUrl || undefined,
+        baseURL: cfg.baseUrl || 'https://generativelanguage.googleapis.com/v1',
       });
       const geminiModelId = (cfg.model || 'text-embedding-004').replace(/^models\//, '');
       return google.embeddingModel(geminiModelId);
