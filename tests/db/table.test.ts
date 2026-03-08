@@ -20,6 +20,10 @@ test('openMemoryTable creates table with correct schema and indices', async () =
     assert.ok(fieldNames.includes('source'), 'missing source');
     assert.ok(fieldNames.includes('openclaw_refs'), 'missing openclaw_refs');
     assert.ok(fieldNames.includes('sensitivity'), 'missing sensitivity');
+    assert.ok(fieldNames.includes('memory_type'), 'missing memory_type');
+    assert.ok(fieldNames.includes('domains'), 'missing domains');
+    assert.ok(fieldNames.includes('source_kind'), 'missing source_kind');
+    assert.ok(fieldNames.includes('confidence'), 'missing confidence');
     assert.ok(fieldNames.includes('mem0_id'), 'missing mem0_id');
     assert.ok(fieldNames.includes('mem0_event_id'), 'missing mem0_event_id');
     assert.ok(fieldNames.includes('lancedb_row_key'), 'missing lancedb_row_key');

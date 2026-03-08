@@ -3,6 +3,7 @@ import { LanceDbMemoryAdapter, type MemoryAdapter } from '../bridge/adapter';
 import type { Mem0ExtractedMemory } from '../control/mem0';
 import { FileAuditStore } from '../audit/store';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
+import { inferMemoryAnnotations } from '../memory/typing';
 import type { MemoryRecord, MemorySyncPayload } from '../types';
 
 const CAPTURE_UID_BUCKET = '1970-01-01T00';
@@ -66,6 +67,12 @@ function toMemoryPayload(
   },
   tsEvent: string,
 ): MemorySyncPayload {
+  const annotations = inferMemoryAnnotations({
+    text: memory.text,
+    categories: memory.categories,
+    sourceKind: 'assistant_inferred',
+  });
+
   return {
     user_id: params.userId,
     run_id: params.runId || null,
@@ -73,6 +80,10 @@ function toMemoryPayload(
     text: memory.text,
     categories: memory.categories,
     tags: [],
+    memory_type: annotations.memoryType,
+    domains: annotations.domains,
+    source_kind: annotations.sourceKind,
+    confidence: annotations.confidence,
     ts_event: tsEvent,
     source: 'openclaw',
     status: 'active',
@@ -97,6 +108,10 @@ function toRecord(memoryUid: string, memory: MemorySyncPayload, adapter: MemoryA
     text: memory.text,
     categories: memory.categories || [],
     tags: memory.tags || [],
+    memory_type: memory.memory_type || 'generic',
+    domains: memory.domains || ['generic'],
+    source_kind: memory.source_kind || 'assistant_inferred',
+    confidence: typeof memory.confidence === 'number' ? memory.confidence : 0.7,
     ts_event: memory.ts_event,
     source: memory.source,
     status: memory.status,

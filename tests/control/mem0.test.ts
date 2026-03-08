@@ -123,6 +123,31 @@ test('http mem0 client returns submitted result with event id', async () => {
   }
 });
 
+test('http mem0 client stores typed metadata fields', async () => {
+  let capturedBody = '';
+  const fetchStub = (async (_input: string | URL | Request, init?: RequestInit) => {
+    capturedBody = String(init?.body || '');
+    return {
+      ok: true,
+      json: async () => ({ id: 'mem0-1', event_id: 'evt-1', hash: 'h1' }),
+    };
+  }) as unknown as typeof fetch;
+  const client = new HttpMem0Client(buildConfig(), fetchStub);
+
+  await client.storeMemory({
+    ...buildRecord(),
+    memory_type: 'preference',
+    domains: ['game'],
+    source_kind: 'user_explicit',
+    confidence: 0.9,
+  });
+
+  assert.match(capturedBody, /"memory_type":"preference"/);
+  assert.match(capturedBody, /"domains":\["game"\]/);
+  assert.match(capturedBody, /"source_kind":"user_explicit"/);
+  assert.match(capturedBody, /"confidence":0\.9/);
+});
+
 test('http mem0 client confirms completed event', async () => {
   let calls = 0;
   const fetchStub = (async (input: string | URL | Request) => {
@@ -279,6 +304,30 @@ test('http mem0 client keeps event id when capture returns queued event array', 
   }
   assert.equal(result.event_id, 'evt-queued-1');
   assert.equal(result.extractedMemories, undefined);
+});
+
+test('http mem0 client submits enhanced search with filters and rerank', async () => {
+  let capturedBody = '';
+  const fetchStub = (async (_input: string | URL | Request, init?: RequestInit) => {
+    capturedBody = String(init?.body || '');
+    return {
+      ok: true,
+      json: async () => ({ results: [{ id: 'm1', memory: 'User likes Nintendo games', categories: ['preference'] }] }),
+    };
+  }) as unknown as typeof fetch;
+  const client = new HttpMem0Client(buildConfig(), fetchStub);
+
+  const results = await client.searchMemories({
+    query: 'What kind of games do I like?',
+    userId: 'user-1',
+    topK: 10,
+    filters: { AND: [{ metadata: { memory_type: 'preference' } }] },
+    rerank: true,
+  });
+
+  assert.equal(results.length, 1);
+  assert.match(capturedBody, /"rerank":true/);
+  assert.match(capturedBody, /"memory_type":"preference"/);
 });
 
 test('http mem0 client fetches extracted memories for a confirmed capture event', async () => {

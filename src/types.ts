@@ -9,6 +9,10 @@ export interface MemoryRecord {
   text: string;
   categories?: string[];
   tags?: string[];
+  memory_type?: MemoryType;
+  domains?: MemoryDomain[];
+  source_kind?: MemorySourceKind;
+  confidence?: number;
   ts_event: string;
   ts_ingest?: string;
   source: 'openclaw';
@@ -105,6 +109,8 @@ export interface SearchParams {
     scope?: string;
     status?: string;
     categories?: string[];
+    memoryType?: MemoryType;
+    domains?: MemoryDomain[];
   };
 }
 
@@ -117,6 +123,10 @@ export interface StoreParams {
   scope?: 'long-term' | 'session';
   metadata?: Record<string, any>;
   categories?: string[];
+  memoryType?: MemoryType;
+  domains?: MemoryDomain[];
+  sourceKind?: MemorySourceKind;
+  confidence?: number;
 }
 
 /**
@@ -154,6 +164,10 @@ export interface MemorySyncPayload {
   text: string;
   categories?: string[];
   tags?: string[];
+  memory_type?: MemoryType;
+  domains?: MemoryDomain[];
+  source_kind?: MemorySourceKind;
+  confidence?: number;
   ts_event: string;
   source: 'openclaw';
   status: 'active' | 'superseded' | 'deleted';
@@ -177,3 +191,7 @@ export interface MemorySyncResult {
   status: MemorySyncStatus;
   memory_uid: string;
 }
+
+export type MemoryType = 'preference' | 'profile' | 'credential' | 'metadata' | 'system' | 'experience' | 'task_context' | 'generic';
+export type MemoryDomain = 'game' | 'food' | 'work' | 'travel' | 'tooling' | 'personal' | 'generic';
+export type MemorySourceKind = 'user_explicit' | 'assistant_inferred' | 'system_generated' | 'imported';

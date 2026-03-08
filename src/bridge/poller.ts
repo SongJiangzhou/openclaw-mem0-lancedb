@@ -1,6 +1,7 @@
 import { LanceDbMemoryAdapter } from './adapter';
 import { hasMem0Auth, buildMem0Headers } from '../control/auth';
 import type { PluginDebugLogger } from '../debug/logger';
+import { inferMemoryAnnotations } from '../memory/typing';
 import type { PluginConfig } from '../types';
 
 export class Mem0Poller {
@@ -67,6 +68,12 @@ export class Mem0Poller {
         }
 
         const isDeleted = mem.is_deleted || mem.status === 'deleted';
+        const annotations = inferMemoryAnnotations({
+          text: mem.memory || mem.text || '',
+          categories: mem.categories || mem.metadata?.categories || [],
+          sourceKind: mem.metadata?.source_kind || mem.metadata?.sourceKind,
+          confidence: mem.metadata?.confidence,
+        });
 
         await adapter.upsertMemory({
           memory_uid: memoryUid,
@@ -77,6 +84,10 @@ export class Mem0Poller {
             text: mem.memory || mem.text || '',
             categories: mem.categories || mem.metadata?.categories || [],
             tags: mem.tags || [],
+            memory_type: mem.metadata?.memory_type || mem.metadata?.memoryType || annotations.memoryType,
+            domains: mem.metadata?.domains || annotations.domains,
+            source_kind: mem.metadata?.source_kind || mem.metadata?.sourceKind || annotations.sourceKind,
+            confidence: typeof mem.metadata?.confidence === 'number' ? mem.metadata.confidence : annotations.confidence,
             ts_event: mem.created_at || new Date().toISOString(),
             source: 'openclaw',
             status: isDeleted ? 'deleted' : (mem.status || 'active'),

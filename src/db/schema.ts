@@ -10,6 +10,10 @@ export interface MemoryRow {
   text: string;
   categories: string[];    // Array of strings
   tags: string[];          // Array of strings
+  memory_type: string;
+  domains: string[];
+  source_kind: string;
+  confidence: number;
   ts_event: string;      // ISO datetime
   source: string;
   status: string;        // active | superseded | deleted

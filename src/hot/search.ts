@@ -2,7 +2,8 @@ import { embedText } from './embedder';
 import { discoverMemoryTables } from './table-discovery';
 import { openMemoryTable } from '../db/table';
 import { getMemoryTableName } from '../db/schema';
-import type { PluginConfig, SearchParams, SearchResult } from '../types';
+import { classifyQueryDomain, classifyQueryIntent, inferMemoryAnnotations, looksLikeCredentialQuery } from '../memory/typing';
+import type { MemoryDomain, MemoryRecord, PluginConfig, SearchParams, SearchResult } from '../types';
 
 const RRF_K = 60;
 const MMR_LAMBDA = 0.5;
@@ -16,9 +17,6 @@ const RECENCY_INTENT_BOOST = 0.4;
 const METADATA_NOISE_PENALTY = 1.25;
 const CREDENTIAL_TEST_NOISE_PENALTY = 1.0;
 const SYSTEM_TRACE_NOISE_PENALTY = 0.75;
-
-type QueryIntent = 'preference' | 'profile' | 'credential' | 'recency' | 'generic';
-type QueryDomain = 'game' | 'food' | 'work' | 'travel' | 'generic';
 
 export class HotMemorySearch {
   private readonly config: PluginConfig;
@@ -181,9 +179,9 @@ export class HotMemorySearch {
   private applyRankingAdjustments(rows: any[], query: string): any[] {
     const now = Date.now();
     const normalizedQuery = this.normalizeText(query);
-    const tokenQuery = this.looksLikeTokenRetrievalQuery(normalizedQuery);
-    const queryIntent = this.classifyQueryIntent(normalizedQuery);
-    const queryDomain = this.classifyQueryDomain(normalizedQuery);
+    const tokenQuery = looksLikeCredentialQuery(normalizedQuery);
+    const queryIntent = classifyQueryIntent(normalizedQuery);
+    const queryDomain = classifyQueryDomain(normalizedQuery);
 
     return rows.map((r) => {
       let ageMs = now - new Date(r.ts_event).getTime();
@@ -215,54 +213,25 @@ export class HotMemorySearch {
     return String(value || '').trim().toLowerCase();
   }
 
-  private looksLikeTokenRetrievalQuery(query: string): boolean {
-    return /口令|密码|token|passcode|验证码|code|密钥/.test(query);
-  }
-
   private containsStructuredToken(text: string): boolean {
     return /[a-z0-9]+(?:-[a-z0-9]+){2,}/i.test(text);
   }
 
-  private classifyQueryIntent(query: string): QueryIntent {
-    if (this.looksLikeTokenRetrievalQuery(query)) {
-      return 'credential';
-    }
-    if (/最近|刚刚|最新|today|yesterday|recent|latest/.test(query)) {
-      return 'recency';
-    }
-    if (/喜欢|偏好|爱好|哪类|what kind|which kind|like|prefer|favorite/.test(query)) {
-      return 'preference';
-    }
-    if (/我是谁|我在哪|我住哪|我在哪上班|我做什么|who am i|where do i|what do i do/.test(query)) {
-      return 'profile';
-    }
-    return 'generic';
-  }
-
-  private classifyQueryDomain(query: string): QueryDomain {
-    if (/游戏|game|games|nintendo|mario|zelda/.test(query)) {
-      return 'game';
-    }
-    if (/吃|食物|餐厅|food|eat|drink|restaurant/.test(query)) {
-      return 'food';
-    }
-    if (/工作|上班|公司|职业|work|job|company|office/.test(query)) {
-      return 'work';
-    }
-    if (/出差|旅行|旅游|travel|trip/.test(query)) {
-      return 'travel';
-    }
-    return 'generic';
-  }
-
-  private computeIntentBoost(row: any, queryIntent: QueryIntent, queryDomain: QueryDomain, decay: number): number {
-    const memoryType = this.inferMemoryType(row);
-    const memoryDomains = this.inferMemoryDomains(row);
+  private computeIntentBoost(row: any, queryIntent: ReturnType<typeof classifyQueryIntent>, queryDomain: ReturnType<typeof classifyQueryDomain>, decay: number): number {
+    const annotations = inferMemoryAnnotations({
+      text: String(row?.text || ''),
+      categories: this.listFieldToStrings(row?.categories),
+      sourceKind: row?.source_kind,
+      confidence: typeof row?.confidence === 'number' ? row.confidence : undefined,
+    });
+    const memoryType = String(row.memory_type || annotations.memoryType);
+    const memoryDomains = this.listFieldToStrings(row.domains);
+    const normalizedDomains = memoryDomains.length > 0 ? memoryDomains : annotations.domains;
     let boost = 0;
 
     if (queryIntent === 'preference' && memoryType === 'preference') {
       boost += PREFERENCE_INTENT_BOOST;
-      if (queryDomain !== 'generic' && memoryDomains.includes(queryDomain)) {
+      if (queryDomain !== 'generic' && normalizedDomains.includes(queryDomain)) {
         boost += DOMAIN_MATCH_BOOST;
       }
     }
@@ -285,7 +254,7 @@ export class HotMemorySearch {
   private computeNoisePenalty(row: any, normalizedQuery: string, tokenQuery: boolean): number {
     const text = String(row?.text || '');
     const normalizedText = this.normalizeText(text);
-    const categories = Array.isArray(row?.categories) ? row.categories.map((item: any) => this.normalizeText(String(item))) : [];
+    const categories = this.listFieldToStrings(row?.categories).map((item) => this.normalizeText(item));
     let penalty = 0;
 
     if (this.isMetadataNoise(normalizedText, categories)) {
@@ -329,49 +298,6 @@ export class HotMemorySearch {
       categories.includes('debug') ||
       /\b(plugin|poller|capture|recall|debug|sync(ed)? memory|integration check)\b/.test(text)
     );
-  }
-
-  private inferMemoryType(row: any): 'preference' | 'profile' | 'credential' | 'metadata' | 'system' | 'generic' {
-    const text = this.normalizeText(String(row?.text || ''));
-    const categories = Array.isArray(row?.categories) ? row.categories.map((item: any) => this.normalizeText(String(item))) : [];
-
-    if (categories.includes('preference') || /user likes|user prefers|用户.*喜欢|用户.*偏好/.test(text)) {
-      return 'preference';
-    }
-    if (categories.includes('profile') || /user works at|user lives in|用户.*在.*上班|用户.*住在/.test(text)) {
-      return 'profile';
-    }
-    if (categories.includes('token') || categories.includes('credential') || /\b(token|password|passcode|secret|api key)\b/.test(text)) {
-      return 'credential';
-    }
-    if (categories.includes('metadata')) {
-      return 'metadata';
-    }
-    if (categories.includes('system') || categories.includes('debug')) {
-      return 'system';
-    }
-    return 'generic';
-  }
-
-  private inferMemoryDomains(row: any): QueryDomain[] {
-    const text = this.normalizeText(String(row?.text || ''));
-    const categories = Array.isArray(row?.categories) ? row.categories.map((item: any) => this.normalizeText(String(item))) : [];
-    const domains: QueryDomain[] = [];
-
-    if (categories.includes('game') || /game|games|nintendo|mario|zelda|游戏/.test(text)) {
-      domains.push('game');
-    }
-    if (categories.includes('food') || /food|eat|drink|restaurant|吃|餐厅/.test(text)) {
-      domains.push('food');
-    }
-    if (categories.includes('work') || /work|job|company|office|上班|工作|公司/.test(text)) {
-      domains.push('work');
-    }
-    if (categories.includes('travel') || /travel|trip|出差|旅行/.test(text)) {
-      domains.push('travel');
-    }
-
-    return domains.length > 0 ? domains : ['generic'];
   }
 
   private applyMmr(rows: any[], queryVector: number[], topK: number): any[] {
@@ -451,15 +377,20 @@ export class HotMemorySearch {
     return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
   }
 
-  private toMemoryRecord(row: any, dim: number) {
+  private toMemoryRecord(row: any, dim: number): MemoryRecord {
+    const domains = this.listFieldToStrings(row.domains) as MemoryDomain[];
     return {
       memory_uid: row.memory_uid,
       user_id: row.user_id,
       run_id: row.run_id || null,
       scope: row.scope,
       text: row.text,
-      categories: Array.isArray(row.categories) ? row.categories : [],
-      tags: Array.isArray(row.tags) ? row.tags : [],
+      categories: this.listFieldToStrings(row.categories),
+      tags: this.listFieldToStrings(row.tags),
+      memory_type: row.memory_type || 'generic',
+      domains: domains.length > 0 ? domains : ['generic'],
+      source_kind: row.source_kind || 'user_explicit',
+      confidence: typeof row.confidence === 'number' ? row.confidence : 0.7,
       ts_event: row.ts_event,
       source: 'openclaw' as const,
       status: row.status,
@@ -485,5 +416,22 @@ export class HotMemorySearch {
     } catch {
       return {};
     }
+  }
+
+  private listFieldToStrings(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item));
+    }
+    if (value && typeof (value as any).toArray === 'function') {
+      return (value as any).toArray().map((item: any) => String(item));
+    }
+    if (value && typeof (value as any).length === 'number' && typeof (value as any).get === 'function') {
+      const items: string[] = [];
+      for (let index = 0; index < (value as any).length; index += 1) {
+        items.push(String((value as any).get(index)));
+      }
+      return items;
+    }
+    return [];
   }
 }

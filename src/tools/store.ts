@@ -7,6 +7,7 @@ import { MemorySyncEngine } from '../bridge/sync-engine';
 import { HttpMem0Client } from '../control/mem0';
 import { sanitizeMemoryText } from '../capture/security';
 import { PluginDebugLogger, summarizeText } from '../debug/logger';
+import { inferMemoryAnnotations } from '../memory/typing';
 import type { MemorySyncPayload, PluginConfig, StoreParams, StoreResult } from '../types';
 
 export class MemoryStoreTool {
@@ -40,6 +41,10 @@ export class MemoryStoreTool {
         scope,
         metadata,
         categories,
+        memoryType: params.memoryType,
+        domains: params.domains,
+        sourceKind: params.sourceKind,
+        confidence: params.confidence,
         eventId,
       });
       const result = await engine.processEvent(eventId, payload);
@@ -64,9 +69,19 @@ export class MemoryStoreTool {
     scope: 'long-term' | 'session';
     metadata: Record<string, any>;
     categories: string[];
+    memoryType?: StoreParams['memoryType'];
+    domains?: StoreParams['domains'];
+    sourceKind?: StoreParams['sourceKind'];
+    confidence?: StoreParams['confidence'];
     eventId: string;
   }): MemorySyncPayload {
     const { cleanText, isRestricted } = sanitizeMemoryText(params.text);
+    const annotations = inferMemoryAnnotations({
+      text: cleanText,
+      categories: params.categories,
+      sourceKind: params.metadata.source_kind || params.metadata.sourceKind || params.sourceKind,
+      confidence: params.metadata.confidence || params.confidence,
+    });
     return {
       user_id: params.userId,
       run_id: params.metadata.run_id || '',
@@ -74,6 +89,10 @@ export class MemoryStoreTool {
       text: cleanText,
       categories: params.categories,
       tags: Array.isArray(params.metadata.tags) ? params.metadata.tags : [],
+      memory_type: params.memoryType || annotations.memoryType,
+      domains: params.domains || annotations.domains,
+      source_kind: params.sourceKind || annotations.sourceKind,
+      confidence: typeof params.confidence === 'number' ? params.confidence : annotations.confidence,
       ts_event: new Date().toISOString(),
       source: 'openclaw',
       status: 'active',

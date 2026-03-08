@@ -36,6 +36,9 @@ test('store writes to LanceDB and is idempotent', async () => {
     assert.equal(rows.length, 1, `expected 1 row, got ${rows.length}`);
     assert.ok(rows[0]?.vector && typeof rows[0].vector.length === 'number', 'expected stored vector-like field');
     assert.equal(rows[0]?.vector.length, 16);
+    assert.equal(rows[0]?.memory_type, 'preference');
+    assert.deepEqual(typeof rows[0]?.domains?.toArray === 'function' ? rows[0].domains.toArray() : rows[0]?.domains, ['generic']);
+    assert.equal(rows[0]?.source_kind, 'user_explicit');
 
     const outbox = JSON.parse(readFileSync(outboxDbPath, 'utf-8')) as {
       items: Array<{ status: string }>;

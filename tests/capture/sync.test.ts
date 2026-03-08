@@ -47,6 +47,8 @@ test('capture sync maps extracted memories into local audit store and hot plane'
     assert.equal(records[0]?.mem0?.mem0_id, 'mem0-captured-1');
     assert.equal(records[0]?.mem0?.event_id, 'evt-capture');
     assert.equal(records[0]?.openclaw_refs?.file_path, 'AUTO_CAPTURE');
+    assert.equal(records[0]?.memory_type, 'preference');
+    assert.equal(records[0]?.source_kind, 'assistant_inferred');
 
     const exists = await adapter.exists(result.memoryUids[0]!);
     assert.equal(exists, true);

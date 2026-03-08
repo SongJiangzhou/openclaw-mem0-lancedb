@@ -1,4 +1,4 @@
-import type { MemoryRecord, PluginConfig } from '../types';
+import type { MemoryDomain, MemoryRecord, MemoryType, PluginConfig } from '../types';
 import type { AutoCapturePayload } from '../capture/auto';
 import { hasMem0Auth, buildMem0Headers } from './auth';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
@@ -16,6 +16,10 @@ export interface Mem0ExtractedMemory {
   id: string | null;
   text: string;
   categories: string[];
+  memory_type?: MemoryType;
+  domains?: MemoryDomain[];
+  source_kind?: string;
+  confidence?: number;
   hash: string | null;
 }
 
@@ -24,6 +28,13 @@ export interface Mem0Client {
   captureTurn(payload: AutoCapturePayload): Promise<Mem0StoreResult>;
   waitForEvent(eventId: string, options?: { attempts?: number; delayMs?: number }): Promise<Mem0EventResult>;
   fetchCapturedMemories(params: { userId: string; eventId: string }): Promise<Mem0ExtractedMemory[]>;
+  searchMemories(params: {
+    query: string;
+    userId: string;
+    topK: number;
+    filters?: Record<string, any>;
+    rerank?: boolean;
+  }): Promise<Mem0ExtractedMemory[]>;
 }
 
 export class HttpMem0Client implements Mem0Client {
@@ -65,6 +76,10 @@ export class HttpMem0Client implements Mem0Client {
             memory_uid: record.memory_uid,
             scope: record.scope,
             categories: record.categories || [],
+            memory_type: record.memory_type || 'generic',
+            domains: record.domains || ['generic'],
+            source_kind: record.source_kind || 'user_explicit',
+            confidence: typeof record.confidence === 'number' ? record.confidence : 0.7,
             openclaw_refs: record.openclaw_refs || {},
             sensitivity: record.sensitivity || 'internal',
           },
@@ -145,6 +160,10 @@ export class HttpMem0Client implements Mem0Client {
             : Array.isArray(item.data?.categories)
               ? item.data.categories
               : [],
+          memory_type: item.metadata?.memory_type || item.data?.metadata?.memory_type || item.memory_type || undefined,
+          domains: item.metadata?.domains || item.data?.metadata?.domains || item.domains || [],
+          source_kind: item.metadata?.source_kind || item.data?.metadata?.source_kind || undefined,
+          confidence: typeof item.metadata?.confidence === 'number' ? item.metadata.confidence : undefined,
           hash: item.hash || item.data?.hash || null,
         }))
         .filter((m: Mem0ExtractedMemory) => Boolean(m.text));
@@ -247,6 +266,10 @@ export class HttpMem0Client implements Mem0Client {
         id: item.id || item.mem0_id || null,
         text: item.memory || item.text || '',
         categories: Array.isArray(item.categories) ? item.categories : [],
+        memory_type: item.metadata?.memory_type || item.memory_type || undefined,
+        domains: item.metadata?.domains || item.domains || [],
+        source_kind: item.metadata?.source_kind || undefined,
+        confidence: typeof item.metadata?.confidence === 'number' ? item.metadata.confidence : undefined,
         hash: item.hash || null,
       }))
       .filter((item: Mem0ExtractedMemory) => Boolean(item.text));
@@ -258,6 +281,65 @@ export class HttpMem0Client implements Mem0Client {
         ...summarizeText(memory.text),
       });
     });
+    return memories;
+  }
+
+  async searchMemories(params: {
+    query: string;
+    userId: string;
+    topK: number;
+    filters?: Record<string, any>;
+    rerank?: boolean;
+  }): Promise<Mem0ExtractedMemory[]> {
+    if (!hasMem0Auth(this.config)) {
+      this.debug?.basic('mem0.search.unavailable', { reason: 'missing_auth', mode: this.config.mem0Mode });
+      return [];
+    }
+
+    let response;
+    try {
+      this.debug?.basic('mem0.search.request', {
+        query: params.query,
+        userId: params.userId,
+        topK: params.topK,
+        rerank: params.rerank ?? false,
+      });
+      response = await this.fetchImpl(`${this.config.mem0BaseUrl}/v1/memories/search/`, {
+        method: 'POST',
+        headers: buildMem0Headers(this.config, { json: true }),
+        body: JSON.stringify({
+          query: params.query,
+          user_id: params.userId,
+          top_k: params.topK,
+          filters: params.filters || {},
+          rerank: params.rerank ?? false,
+          include_vectors: false,
+        }),
+      });
+    } catch {
+      this.debug?.error('mem0.search.error', { message: 'request_failed' });
+      return [];
+    }
+
+    if (!response.ok) {
+      throw new Error(`Mem0 search failed: ${response.status}`);
+    }
+
+    const data: any = await response.json();
+    const items = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : Array.isArray(data?.items) ? data.items : [];
+    const memories = items
+      .map((item: any) => ({
+        id: item.id || item.mem0_id || null,
+        text: item.memory || item.text || '',
+        categories: Array.isArray(item.categories) ? item.categories : item.metadata?.categories || [],
+        memory_type: item.metadata?.memory_type || item.memory_type || undefined,
+        domains: item.metadata?.domains || item.domains || [],
+        source_kind: item.metadata?.source_kind || undefined,
+        confidence: typeof item.metadata?.confidence === 'number' ? item.metadata.confidence : undefined,
+        hash: item.hash || null,
+      }))
+      .filter((item: Mem0ExtractedMemory) => Boolean(item.text));
+    this.debug?.basic('mem0.search.result', { count: memories.length, rerank: params.rerank ?? false });
     return memories;
   }
 }
@@ -287,6 +369,16 @@ export class FakeMem0Client implements Mem0Client {
   }
 
   async fetchCapturedMemories(_params: { userId: string; eventId: string }): Promise<Mem0ExtractedMemory[]> {
+    return [];
+  }
+
+  async searchMemories(_params: {
+    query: string;
+    userId: string;
+    topK: number;
+    filters?: Record<string, any>;
+    rerank?: boolean;
+  }): Promise<Mem0ExtractedMemory[]> {
     return [];
   }
 }
