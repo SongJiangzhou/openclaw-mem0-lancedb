@@ -1,4 +1,5 @@
-import { openMemoryTable } from '../db/table';
+import * as lancedb from '@lancedb/lancedb';
+import { getTableSchemaFields, openMemoryTable, openMemoryTableByName, sanitizeRecordsForSchema } from '../db/table';
 import { existsSync, renameSync, rmSync } from 'node:fs';
 import * as path from 'node:path';
 import type { PluginDebugLogger } from '../debug/logger';
@@ -56,15 +57,19 @@ export class EmbeddingMigrationWorker {
   protected async upsertCurrentRow(row: Record<string, unknown>): Promise<void> {
     const currentDim = this.config.embedding?.dimension || 16;
     const targetTable = await openMemoryTable(this.config.lancedbPath, currentDim);
+    const allowedFields = await getTableSchemaFields(targetTable);
+    const safeRows = sanitizeRecordsForSchema([row], allowedFields);
 
     await targetTable.mergeInsert('memory_uid')
       .whenMatchedUpdateAll()
       .whenNotMatchedInsertAll()
-      .execute([row]);
+      .execute(safeRows);
   }
 
   private async migrateBatch(): Promise<void> {
     const currentDim = this.config.embedding?.dimension || 16;
+    await this.renameOutdatedActiveTable(currentDim);
+
     const batchSize = this.getMigrationConfig().batchSize;
     const tables = await discoverMemoryTables(this.config.lancedbPath, currentDim);
     const legacyTables = tables.filter((table) => table.dimension !== currentDim);
@@ -84,7 +89,7 @@ export class EmbeddingMigrationWorker {
         break;
       }
 
-      const sourceTable = await openMemoryTable(this.config.lancedbPath, tableInfo.dimension);
+      const sourceTable = await openMemoryTableByName(this.config.lancedbPath, tableInfo.name);
       const rows = await sourceTable
         .query()
         .where("status != 'deleted'")
@@ -155,6 +160,34 @@ export class EmbeddingMigrationWorker {
 
     renameSync(lancePath, backupPath);
     this.debug?.basic('embedding_migration.backup_table', { tableName, backupPath });
+  }
+
+  private async renameOutdatedActiveTable(currentDim: number): Promise<void> {
+    const dbPath = resolveLanceDbPath(this.config.lancedbPath);
+    const tableName = currentDim === 16 ? 'memory_records' : `memory_records_d${currentDim}`;
+    const db = await lancedb.connect(dbPath);
+    const tableNames = await db.tableNames();
+
+    if (!tableNames.includes(tableName)) {
+      return;
+    }
+
+    const activeTable = await db.openTable(tableName);
+    const activeFields = await getTableSchemaFields(activeTable);
+    if (activeFields.has('memory_type')) {
+      return;
+    }
+
+    activeTable.close();
+
+    const lancePath = path.join(dbPath, `${tableName}.lance`);
+    if (!existsSync(lancePath)) {
+      return;
+    }
+
+    const legacyPath = path.join(dbPath, `${tableName}_legacy_${Date.now()}.lance`);
+    renameSync(lancePath, legacyPath);
+    this.debug?.basic('embedding_migration.schema_upgrade', { tableName, legacyPath });
   }
 
   private shouldMigrateRow(row: any): boolean {

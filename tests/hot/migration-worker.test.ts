@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -181,6 +181,57 @@ test('migration worker exits quietly when there are no legacy tables', async () 
     });
 
     await assert.doesNotReject(async () => worker.runOnce());
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('migration worker renames an outdated active table, recreates the current schema, and migrates rows back', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'migration-worker-'));
+
+  try {
+    const db = await lancedb.connect(dir);
+    await db.createTable('memory_records', [{
+      memory_uid: 'memory-1',
+      user_id: 'user-1',
+      run_id: '',
+      scope: 'long-term',
+      text: 'User prefers concise answers',
+      categories: ['preference'],
+      tags: ['style'],
+      ts_event: new Date().toISOString(),
+      source: 'openclaw',
+      status: 'active',
+      sensitivity: 'internal',
+      openclaw_refs: '{}',
+      mem0_id: '',
+      mem0_event_id: '',
+      mem0_hash: '',
+      lancedb_row_key: 'memory-1',
+      vector: new Array<number>(16).fill(0),
+    }]);
+
+    const worker = new EmbeddingMigrationWorker({
+      ...baseConfig,
+      lancedbPath: dir,
+      outboxDbPath: join(dir, 'outbox.json'),
+      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+    });
+
+    await worker.runOnce();
+
+    const currentTable = await openMemoryTable(dir, 16);
+    const migratedRows = await currentTable.query().where("memory_uid = 'memory-1'").toArray();
+    const schema = await currentTable.schema();
+    const fieldNames = schema.fields.map((field: any) => String(field.name));
+    const files = readdirSync(dir);
+
+    assert.equal(migratedRows.length, 1);
+    assert.equal(migratedRows[0]?.memory_type, 'generic');
+    assert.ok(fieldNames.includes('memory_type'));
+    assert.ok(fieldNames.includes('domains'));
+    assert.equal(existsSync(join(dir, 'memory_records.lance')), true);
+    assert.ok(files.some((file) => /^memory_records_legacy_\d+\.bak$/.test(file)));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

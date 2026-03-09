@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openMemoryTable } from '../../src/db/table';
+import { getTableSchemaFields, openMemoryTable, sanitizeRecordsForSchema } from '../../src/db/table';
 
 test('openMemoryTable creates table with correct schema and indices', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ldb-table-'));
@@ -36,6 +36,29 @@ test('openMemoryTable creates table with correct schema and indices', async () =
     const indices = await tbl.listIndices();
     const indexedColumns = indices.flatMap((idx: any) => idx.columns);
     assert.ok(indexedColumns.includes('user_id'), 'missing scalar index on user_id');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sanitizeRecordsForSchema strips out unknown fields', () => {
+  const records = [{ a: 1, b: 2, c: 3 }, { a: 4, d: 5 }];
+  const allowed = new Set(['a', 'c']);
+
+  const result = sanitizeRecordsForSchema(records, allowed);
+
+  assert.deepEqual(result, [{ a: 1, c: 3 }, { a: 4 }]);
+});
+
+test('getTableSchemaFields returns the supported field names', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ldb-table-schema-'));
+  try {
+    const tbl = await openMemoryTable(dir);
+    const fieldNames = await getTableSchemaFields(tbl);
+
+    assert.ok(fieldNames.has('memory_uid'));
+    assert.ok(fieldNames.has('memory_type'));
+    assert.ok(fieldNames.has('vector'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
