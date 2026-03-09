@@ -69,6 +69,7 @@ export interface Mem0Config {
   mode: Mem0Mode;
   baseUrl: string;
   apiKey: string;
+  autoStartLocal?: boolean;
 }
 
 export interface EmbeddingMigrationConfig {

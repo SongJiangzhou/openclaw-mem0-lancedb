@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { spawn } from 'node:child_process';
 
 import { FileAuditStore } from './audit/store';
 import { LanceDbMemoryAdapter } from './bridge/adapter';
@@ -14,6 +15,7 @@ import { runAutoRecall } from './recall/auto';
 import { Mem0Poller } from './bridge/poller';
 import { EmbeddingMigrationWorker } from './hot/migration-worker';
 import { PluginDebugLogger, summarizeText } from './debug/logger';
+import { isLocalMem0BaseUrl } from './control/auth';
 import type { PluginConfig } from './types';
 
 function textResult(summary: string, details: any) {
@@ -36,7 +38,14 @@ type OpenClawApi = {
   on?: (event: string, handler: (...args: any[]) => any, opts?: any) => void;
 };
 
+type LocalMem0StartupDeps = {
+  fetchFn?: typeof fetch;
+  spawnFn?: typeof spawn;
+  sleep?: (ms: number) => Promise<void>;
+};
+
 const PLUGIN_VERSION = readPluginVersion();
+let localMem0StartupPromise: Promise<{ started: boolean; healthy: boolean }> | null = null;
 
 export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): PluginConfig {
   const mem0 = resolveMem0Config(raw);
@@ -78,11 +87,13 @@ function resolveMem0Config(raw?: Partial<PluginConfig>): NonNullable<PluginConfi
   const explicitBaseUrl = raw?.mem0?.baseUrl || 'https://api.mem0.ai';
   const explicitApiKey = raw?.mem0?.apiKey || '';
   const explicitMode = raw?.mem0?.mode || 'remote';
+  const explicitAutoStartLocal = raw?.mem0?.autoStartLocal;
 
   return {
     mode: explicitMode,
     baseUrl: explicitBaseUrl,
     apiKey: explicitApiKey,
+    autoStartLocal: explicitAutoStartLocal ?? explicitMode === 'local',
   };
 }
 
@@ -140,6 +151,8 @@ export default function register(api: OpenClawApi) {
     debugMode: cfg.debug?.mode || 'off',
     debugLogDir: cfg.debug?.logDir,
   });
+
+  void maybeAutoStartLocalMem0(cfg, debug);
 
   const poller = new Mem0Poller(cfg, debug);
   poller.start();
@@ -403,6 +416,70 @@ export default function register(api: OpenClawApi) {
   }
 
   api.logger?.info?.(`[openclaw-mem0-lancedb] registered v${PLUGIN_VERSION}`);
+}
+
+export async function maybeAutoStartLocalMem0(
+  config: PluginConfig,
+  debug: Pick<PluginDebugLogger, 'basic' | 'warn'>,
+  deps: LocalMem0StartupDeps = {},
+): Promise<{ started: boolean; healthy: boolean }> {
+  if (config.mem0Mode !== 'local' || config.mem0?.autoStartLocal === false || !isLocalMem0BaseUrl(config.mem0BaseUrl)) {
+    return { started: false, healthy: false };
+  }
+
+  if (localMem0StartupPromise) {
+    return localMem0StartupPromise;
+  }
+
+  const fetchFn = deps.fetchFn || fetch;
+  const spawnFn = deps.spawnFn || spawn;
+  const sleep = deps.sleep || ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const healthUrl = new URL('/v1/health', config.mem0BaseUrl).toString();
+
+  const checkHealth = async (): Promise<boolean> => {
+    try {
+      const response = await fetchFn(healthUrl);
+      return Boolean(response?.ok);
+    } catch {
+      return false;
+    }
+  };
+
+  if (await checkHealth()) {
+    return { started: false, healthy: true };
+  }
+
+  localMem0StartupPromise = (async () => {
+    if (await checkHealth()) {
+      return { started: false, healthy: true };
+    }
+
+    const rootDir = path.resolve(__dirname, '..', '..');
+    const child = spawnFn('uv', ['run', 'uvicorn', 'scripts.mem0_server:app', '--port', '8000'], {
+      cwd: rootDir,
+      detached: true,
+      stdio: 'ignore',
+    } as any);
+    if (typeof child?.unref === 'function') {
+      child.unref();
+    }
+    debug.basic('mem0.autostart.spawned', { baseUrl: config.mem0BaseUrl });
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await sleep(300);
+      if (await checkHealth()) {
+        debug.basic('mem0.autostart.ready', { baseUrl: config.mem0BaseUrl, attempt: attempt + 1 });
+        return { started: true, healthy: true };
+      }
+    }
+
+    debug.warn('mem0.autostart.timeout');
+    return { started: true, healthy: false };
+  })().finally(() => {
+    localMem0StartupPromise = null;
+  });
+
+  return localMem0StartupPromise;
 }
 
 function readPluginVersion(): string {

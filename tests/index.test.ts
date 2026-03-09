@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { FileAuditStore } from '../src/audit/store';
 import { MemoryStoreTool } from '../src/tools/store';
-import register, { resolveConfig } from '../src/index';
+import register, { maybeAutoStartLocalMem0, resolveConfig } from '../src/index';
 
 function pendingCapturePath(sessionKey: string): string {
   const safe = sessionKey.replace(/[^a-z0-9]/gi, '_').slice(0, 64);
@@ -57,6 +57,64 @@ test('resolveConfig maps nested mem0 config into explicit runtime mode', async (
   assert.equal(config.mem0Mode, 'local');
   assert.equal(config.mem0BaseUrl, 'http://127.0.0.1:8000');
   assert.equal(config.mem0ApiKey, '');
+  assert.equal(config.mem0?.autoStartLocal, true);
+});
+
+test('maybeAutoStartLocalMem0 does not spawn when local mem0 is already healthy', async () => {
+  let spawnCalls = 0;
+  const result = await maybeAutoStartLocalMem0(
+    resolveConfig({
+      mem0: {
+        mode: 'local',
+        baseUrl: 'http://127.0.0.1:8000',
+        apiKey: '',
+      },
+    } as any),
+    { basic() {}, warn() {} } as any,
+    {
+      fetchFn: (async () => ({ ok: true })) as any,
+      spawnFn: (() => {
+        spawnCalls += 1;
+        throw new Error('should not spawn');
+      }) as any,
+    },
+  );
+
+  assert.equal(result.started, false);
+  assert.equal(result.healthy, true);
+  assert.equal(spawnCalls, 0);
+});
+
+test('maybeAutoStartLocalMem0 spawns local mem0 when healthcheck fails then becomes healthy', async () => {
+  let healthChecks = 0;
+  let spawnCalls = 0;
+
+  const result = await maybeAutoStartLocalMem0(
+    resolveConfig({
+      mem0: {
+        mode: 'local',
+        baseUrl: 'http://127.0.0.1:8000',
+        apiKey: '',
+      },
+    } as any),
+    { basic() {}, warn() {} } as any,
+    {
+      fetchFn: (async () => {
+        healthChecks += 1;
+        return { ok: healthChecks >= 3 };
+      }) as any,
+      spawnFn: (() => {
+        spawnCalls += 1;
+        return { unref() {} };
+      }) as any,
+      sleep: async () => {},
+    },
+  );
+
+  assert.equal(result.started, true);
+  assert.equal(result.healthy, true);
+  assert.equal(spawnCalls, 1);
+  assert.equal(healthChecks >= 3, true);
 });
 
 test('resolveConfig does not read deprecated top-level mem0 auth fields', async () => {
