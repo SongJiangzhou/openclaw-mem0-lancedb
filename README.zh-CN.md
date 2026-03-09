@@ -150,10 +150,10 @@ Auto capture：
 为了进行本地开发和测试，您可以启动一个本地的 Mem0 API 实例。强烈推荐使用这种方式，以便轻松调试插件与 Mem0 控制面之间的交互。
 
 1.  **前置要求**: 确保您已经安装了 `uv` (可以通过 `pip install uv` 或系统包管理器安装)。
-2.  **设置环境**: 运行 `npm run mem0:setup` 来创建虚拟环境并安装依赖。
+2.  **设置环境**: 运行 `npm run mem0:setup` 来创建虚拟环境并安装依赖，其中包含 Gemini 本地模式需要的 `google-genai`。
 3.  **启动服务**: 运行 `npm run mem0:start` 在 `http://127.0.0.1:8000` 启动服务。
 
-如果 `mem0BaseUrl` 设置为 `http://127.0.0.1:8000` 并且 `mem0Mode` 为 `local`，插件将会自动与这个本地服务通信。
+本地服务会读取 `~/.openclaw/openclaw.json` 中的 `agents.defaults.memorySearch`，复用 provider、API Key、model 和 baseUrl；排障时也可以再用环境变量覆盖。
 
 ## 开发
 

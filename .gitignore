@@ -19,5 +19,6 @@ memory_lancedb/
 # Mem0 Local Server
 .venv/
 .mem0_local_db/
+.mem0_runtime/
 __pycache__/
 .worktrees/

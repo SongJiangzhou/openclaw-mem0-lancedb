@@ -11,7 +11,7 @@
     "test": "node --test dist/tests/**/*.test.js",
     "install-plugin": "bash scripts/install.sh",
     "install-plugin:zh": "bash scripts/install_zh.sh",
-    "mem0:setup": "uv venv && uv pip install mem0ai[local] fastapi uvicorn pydantic",
+    "mem0:setup": "uv venv && uv pip install mem0ai[local] fastapi uvicorn pydantic google-genai",
     "mem0:start": "uv run uvicorn scripts.mem0_server:app --reload --port 8000"
   },
   "dependencies": {

@@ -150,10 +150,10 @@ Auto capture:
 For local development and testing, you can spin up a local instance of the Mem0 API. This is highly recommended to easily debug the interaction between the plugin and the Mem0 control plane.
 
 1.  **Prerequisites**: Ensure you have `uv` installed (`pip install uv` or via your system package manager).
-2.  **Setup Environment**: Run `npm run mem0:setup` to create a virtual environment and install dependencies.
+2.  **Setup Environment**: Run `npm run mem0:setup` to create a virtual environment and install dependencies, including `google-genai` for Gemini-backed local Mem0.
 3.  **Start Server**: Run `npm run mem0:start` to start the server on `http://127.0.0.1:8000`.
 
-The plugin will automatically communicate with this server if `mem0BaseUrl` is set to `http://127.0.0.1:8000` and `mem0Mode` is `local`.
+The local server reads `~/.openclaw/openclaw.json` and reuses `agents.defaults.memorySearch` for provider, API key, model, and base URL. Environment variables can override this when debugging.
 
 ## Development
 
