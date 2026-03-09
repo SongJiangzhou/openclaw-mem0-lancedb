@@ -1,6 +1,7 @@
 import { HotMemorySearch } from '../hot/search';
 import { hasMem0Auth } from '../control/auth';
 import { HttpMem0Client } from '../control/mem0';
+import { buildMemoryDedupKeys } from '../memory/dedup';
 import { classifyQueryDomain, classifyQueryIntent } from '../memory/typing';
 import type { MemoryDomain, PluginConfig, SearchParams, SearchResult } from '../types';
 
@@ -145,11 +146,12 @@ export class MemorySearchTool {
   private mergeLocalAndRemote(local: SearchResult, remote: SearchResult, topK: number): SearchResult {
     const seen = new Set<string>();
     const merged = [...local.memories, ...remote.memories].filter((memory) => {
-      const key = memory.memory_uid || `${memory.user_id}:${memory.text}`;
-      if (seen.has(key)) {
+      const keys = buildMemoryDedupKeys({ text: memory.text, mem0: memory.mem0 });
+      const dedupKeys = keys.length > 0 ? keys : [memory.memory_uid || `${memory.user_id}:${memory.text}`];
+      if (dedupKeys.some((key) => seen.has(key))) {
         return false;
       }
-      seen.add(key);
+      dedupKeys.forEach((key) => seen.add(key));
       return true;
     });
 

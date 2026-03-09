@@ -3,6 +3,7 @@ import { LanceDbMemoryAdapter, type MemoryAdapter } from '../bridge/adapter';
 import type { Mem0ExtractedMemory } from '../control/mem0';
 import { FileAuditStore } from '../audit/store';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
+import { buildMemoryDedupKeys } from '../memory/dedup';
 import { inferMemoryAnnotations } from '../memory/typing';
 import type { MemoryRecord, MemorySyncPayload } from '../types';
 
@@ -20,7 +21,9 @@ export async function syncCapturedMemories(params: {
   debug?: PluginDebugLogger;
 }): Promise<{ synced: number; memoryUids: string[] }> {
   const tsEvent = params.tsEvent || new Date().toISOString();
-  const existingUids = new Set((await params.auditStore.readAll()).map((record) => record.memory_uid));
+  const existingRows = await params.auditStore.readAll();
+  const existingUids = new Set(existingRows.map((record) => record.memory_uid));
+  const existingDedupKeys = new Set(existingRows.flatMap((record) => buildMemoryDedupKeys({ text: record.text, mem0: record.mem0 })));
   const memoryUids: string[] = [];
   let synced = 0;
   params.debug?.basic('capture_sync.start', { eventId: params.eventId, count: params.memories.length, scope: params.scope });
@@ -36,8 +39,22 @@ export async function syncCapturedMemories(params: {
       category,
     );
     memoryUids.push(memoryUid);
+    const dedupKeys = buildMemoryDedupKeys({ text: memoryPayload.text, mem0: memoryPayload.mem0 });
+    const duplicateMemoryUid = await params.adapter.findDuplicateMemoryUid(memoryPayload);
 
-    if (existingUids.has(memoryUid) || (await params.adapter.exists(memoryUid))) {
+    if (
+      existingUids.has(memoryUid) ||
+      dedupKeys.some((key) => existingDedupKeys.has(key)) ||
+      (duplicateMemoryUid !== null && duplicateMemoryUid !== '') ||
+      (await params.adapter.exists(memoryUid))
+    ) {
+      if (duplicateMemoryUid && duplicateMemoryUid !== memoryUid) {
+        await params.adapter.upsertMemory({
+          memory_uid: duplicateMemoryUid,
+          memory: memoryPayload,
+        });
+      }
+      dedupKeys.forEach((key) => existingDedupKeys.add(key));
       params.debug?.verbose('capture_sync.duplicate', { eventId: params.eventId, memoryUid, ...summarizeText(memory.text) });
       continue;
     }
@@ -49,6 +66,7 @@ export async function syncCapturedMemories(params: {
       memory: memoryPayload,
     });
     existingUids.add(memoryUid);
+    dedupKeys.forEach((key) => existingDedupKeys.add(key));
     synced += 1;
     params.debug?.verbose('capture_sync.synced_memory', { eventId: params.eventId, memoryUid, ...summarizeText(memory.text) });
   }

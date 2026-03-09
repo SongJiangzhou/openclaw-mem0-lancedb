@@ -2,6 +2,7 @@ import { embedText } from './embedder';
 import { discoverMemoryTables } from './table-discovery';
 import { openMemoryTable } from '../db/table';
 import { getMemoryTableName } from '../db/schema';
+import { buildMemoryDedupKeys } from '../memory/dedup';
 import { classifyQueryDomain, classifyQueryIntent, inferMemoryAnnotations, looksLikeCredentialQuery } from '../memory/typing';
 import type { MemoryDomain, MemoryRecord, PluginConfig, SearchParams, SearchResult } from '../types';
 
@@ -59,8 +60,8 @@ export class HotMemorySearch {
       }
     }
     
-    // 去重：按 memory_uid 保留最高分的记录
-    const uniqueRows = this.deduplicateByUid(allRows);
+    // 去重：按 mem0_hash / 规范化文本 折叠同语义记录
+    const uniqueRows = this.deduplicateRows(allRows);
     
     if (uniqueRows.length === 0) {
       return {
@@ -97,20 +98,40 @@ export class HotMemorySearch {
     };
   }
   
-  private deduplicateByUid(rows: any[]): any[] {
-    const seen = new Map<string, any>();
-    
+  private deduplicateRows(rows: any[]): any[] {
+    const aliasToCanonical = new Map<string, string>();
+    const canonicalRows = new Map<string, any>();
+    let anonymousIndex = 0;
+
     for (const row of rows) {
-      const uid = row.memory_uid;
-      if (!uid) continue;
-      
-      const existing = seen.get(uid);
-      if (!existing || (row.__rrf_score || 0) > (existing.__rrf_score || 0)) {
-        seen.set(uid, row);
+      const dedupKeys = buildMemoryDedupKeys({ text: row.text, mem0_hash: row.mem0_hash });
+      const existingCanonicalId = dedupKeys.map((key) => aliasToCanonical.get(key)).find(Boolean);
+      const fallbackId = String(row.memory_uid || `row-${anonymousIndex++}`);
+      const canonicalId = existingCanonicalId || fallbackId;
+      const existingRow = canonicalRows.get(canonicalId);
+
+      if (!existingRow || this.isHigherPriorityRow(row, existingRow)) {
+        canonicalRows.set(canonicalId, row);
+      }
+
+      if (dedupKeys.length === 0) {
+        aliasToCanonical.set(fallbackId, canonicalId);
+      } else {
+        dedupKeys.forEach((key) => aliasToCanonical.set(key, canonicalId));
       }
     }
-    
-    return Array.from(seen.values());
+
+    return Array.from(canonicalRows.values());
+  }
+
+  private isHigherPriorityRow(candidate: any, existing: any): boolean {
+    const candidateScore = candidate.__rrf_score || candidate.__final_score || 0;
+    const existingScore = existing.__rrf_score || existing.__final_score || 0;
+    if (candidateScore !== existingScore) {
+      return candidateScore > existingScore;
+    }
+
+    return String(candidate.ts_event || '') > String(existing.ts_event || '');
   }
 
   private buildWhereClause(userId: string, filters?: SearchParams['filters']): string {

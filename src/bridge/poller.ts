@@ -74,34 +74,37 @@ export class Mem0Poller {
           sourceKind: mem.metadata?.source_kind || mem.metadata?.sourceKind,
           confidence: mem.metadata?.confidence,
         });
+        const payload = {
+          user_id: mem.user_id || 'default',
+          run_id: mem.run_id || '',
+          scope: mem.metadata?.scope || 'long-term',
+          text: mem.memory || mem.text || '',
+          categories: mem.categories || mem.metadata?.categories || [],
+          tags: mem.tags || [],
+          memory_type: mem.metadata?.memory_type || mem.metadata?.memoryType || annotations.memoryType,
+          domains: mem.metadata?.domains || annotations.domains,
+          source_kind: mem.metadata?.source_kind || mem.metadata?.sourceKind || annotations.sourceKind,
+          confidence: typeof mem.metadata?.confidence === 'number' ? mem.metadata.confidence : annotations.confidence,
+          ts_event: mem.created_at || new Date().toISOString(),
+          source: 'openclaw' as const,
+          status: isDeleted ? 'deleted' : (mem.status || 'active'),
+          sensitivity: mem.metadata?.sensitivity || 'internal',
+          openclaw_refs: mem.metadata?.openclaw_refs || {},
+          mem0: {
+            mem0_id: mem.id || null,
+            event_id: mem.event_id || null,
+            hash: mem.hash || null,
+          },
+        };
+        const duplicateMemoryUid = await adapter.findDuplicateMemoryUid(payload);
+        const targetMemoryUid = duplicateMemoryUid || memoryUid;
 
         await adapter.upsertMemory({
-          memory_uid: memoryUid,
-          memory: {
-            user_id: mem.user_id || 'default',
-            run_id: mem.run_id || '',
-            scope: mem.metadata?.scope || 'long-term',
-            text: mem.memory || mem.text || '',
-            categories: mem.categories || mem.metadata?.categories || [],
-            tags: mem.tags || [],
-            memory_type: mem.metadata?.memory_type || mem.metadata?.memoryType || annotations.memoryType,
-            domains: mem.metadata?.domains || annotations.domains,
-            source_kind: mem.metadata?.source_kind || mem.metadata?.sourceKind || annotations.sourceKind,
-            confidence: typeof mem.metadata?.confidence === 'number' ? mem.metadata.confidence : annotations.confidence,
-            ts_event: mem.created_at || new Date().toISOString(),
-            source: 'openclaw',
-            status: isDeleted ? 'deleted' : (mem.status || 'active'),
-            sensitivity: mem.metadata?.sensitivity || 'internal',
-            openclaw_refs: mem.metadata?.openclaw_refs || {},
-            mem0: {
-              mem0_id: mem.id || null,
-              event_id: mem.event_id || null,
-              hash: mem.hash || null,
-            },
-          }
+          memory_uid: targetMemoryUid,
+          memory: payload,
         });
         synced += 1;
-        this.debug?.verbose('mem0_poller.synced_memory', { memoryUid });
+        this.debug?.verbose('mem0_poller.synced_memory', { memoryUid: targetMemoryUid });
       }
       this.lastSyncTime = new Date().toISOString();
       this.debug?.basic('mem0_poller.done', { fetched: memories.length, synced });

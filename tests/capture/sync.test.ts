@@ -140,3 +140,43 @@ test('capture sync emits debug events for synced and duplicate memories', async 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('capture sync skips semantic duplicates that share mem0 hash with a different id', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'capture-sync-'));
+
+  try {
+    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
+    const adapter = new InMemoryMemoryAdapter();
+
+    const first = await syncCapturedMemories({
+      memories: [createExtractedMemory({ id: 'mem0-captured-1', text: 'User prefers Coke over Pepsi', hash: 'hash-coke' })],
+      userId: 'user-1',
+      runId: 'run-1',
+      scope: 'long-term',
+      eventId: 'evt-capture-1',
+      auditStore,
+      adapter,
+      tsEvent: '2026-03-07T12:00:00.000Z',
+    });
+    const second = await syncCapturedMemories({
+      memories: [createExtractedMemory({ id: 'mem0-captured-2', text: 'User prefers Coke over Pepsi.', hash: 'hash-coke' })],
+      userId: 'user-1',
+      runId: 'run-1',
+      scope: 'long-term',
+      eventId: 'evt-capture-2',
+      auditStore,
+      adapter,
+      tsEvent: '2026-03-07T12:05:00.000Z',
+    });
+
+    const records = await auditStore.readAll();
+
+    assert.equal(first.synced, 1);
+    assert.equal(second.synced, 0);
+    assert.equal(records.length, 1);
+    assert.equal(await adapter.exists(first.memoryUids[0]!), true);
+    assert.equal(await adapter.exists(second.memoryUids[0]!), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

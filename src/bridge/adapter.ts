@@ -1,6 +1,7 @@
 import { getTableSchemaFields, openMemoryTable, sanitizeRecordsForSchema } from '../db/table';
 import type { MemoryRow } from '../db/schema';
 import { embedText } from '../hot/embedder';
+import { buildMemoryDedupKeys } from '../memory/dedup';
 import type { MemorySyncPayload, EmbeddingConfig } from '../types';
 
 export interface MemoryAdapterRecord {
@@ -11,6 +12,7 @@ export interface MemoryAdapterRecord {
 export interface MemoryAdapter {
   upsertMemory(record: MemoryAdapterRecord): Promise<void>;
   exists(memoryUid: string): Promise<boolean>;
+  findDuplicateMemoryUid(memory: MemorySyncPayload): Promise<string | null>;
 }
 
 export class InMemoryMemoryAdapter implements MemoryAdapter {
@@ -31,6 +33,22 @@ export class InMemoryMemoryAdapter implements MemoryAdapter {
     }
 
     return this.rows.has(memoryUid);
+  }
+
+  async findDuplicateMemoryUid(memory: MemorySyncPayload): Promise<string | null> {
+    const incomingKeys = new Set(buildMemoryDedupKeys({ text: memory.text, mem0: memory.mem0 }));
+    if (incomingKeys.size === 0) {
+      return null;
+    }
+
+    for (const [memoryUid, record] of this.rows.entries()) {
+      const existingKeys = buildMemoryDedupKeys({ text: record.memory.text, mem0: record.memory.mem0 });
+      if (existingKeys.some((key) => incomingKeys.has(key))) {
+        return memoryUid;
+      }
+    }
+
+    return null;
   }
 }
 
@@ -63,6 +81,31 @@ export class LanceDbMemoryAdapter implements MemoryAdapter {
     const rows = await table.query().where(`memory_uid = '${memoryUid}'`).limit(1).toArray();
     return rows.length > 0;
   }
+
+  async findDuplicateMemoryUid(memory: MemorySyncPayload): Promise<string | null> {
+    const incomingKeys = new Set(buildMemoryDedupKeys({ text: memory.text, mem0: memory.mem0 }));
+    if (incomingKeys.size === 0) {
+      return null;
+    }
+
+    const dim = this.config?.dimension || 16;
+    const table = await openMemoryTable(this.lancedbPath, dim);
+    const userId = escapeSqlString(memory.user_id);
+    const rows = await table.query().where(`user_id = '${userId}' AND status = 'active'`).toArray();
+
+    for (const row of rows) {
+      const existingKeys = buildMemoryDedupKeys({ text: row.text, mem0_hash: row.mem0_hash });
+      if (existingKeys.some((key) => incomingKeys.has(key))) {
+        return String(row.memory_uid || '');
+      }
+    }
+
+    return null;
+  }
+}
+
+function escapeSqlString(value: string): string {
+  return String(value || '').replace(/'/g, "''");
 }
 
 async function toLanceRow(record: MemoryAdapterRecord, config?: EmbeddingConfig): Promise<MemoryRow> {

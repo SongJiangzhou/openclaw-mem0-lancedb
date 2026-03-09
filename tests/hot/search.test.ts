@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { MemoryStoreTool } from '../../src/tools/store';
 import { HotMemorySearch } from '../../src/hot/search';
+import { openMemoryTable } from '../../src/db/table';
 
 test('hot plane search returns canonical memory rows with filters', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'hot-search-'));
@@ -143,6 +144,85 @@ test('hot plane exact token query ranks exact substring hit first', async () => 
 
     assert.ok(result.memories.length >= 1);
     assert.match(result.memories[0]?.text || '', /mem0-local-e2e-20260308-1156-ZP4M/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('hot plane search deduplicates rows with identical text but different memory ids', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hot-search-'));
+
+  try {
+    const cfg = {
+      lancedbPath: dir,
+      mem0BaseUrl: '',
+      mem0ApiKey: '',
+      outboxDbPath: join(dir, 'outbox.json'),
+      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+      autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
+      autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
+      embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+    };
+    const tbl = await openMemoryTable(dir, 16);
+    await tbl.add([
+      {
+        memory_uid: 'dup-1',
+        user_id: 'user-1',
+        run_id: '',
+        scope: 'long-term',
+        text: 'User prefers Coke over Pepsi',
+        categories: ['preference'],
+        tags: [],
+        memory_type: 'preference',
+        domains: ['food'],
+        source_kind: 'assistant_inferred',
+        confidence: 0.9,
+        ts_event: '2026-03-09T18:00:00.000Z',
+        source: 'openclaw',
+        status: 'active',
+        sensitivity: 'internal',
+        openclaw_refs: '{}',
+        mem0_id: 'mem0-1',
+        mem0_event_id: '',
+        mem0_hash: 'hash-coke',
+        lancedb_row_key: 'dup-1',
+        vector: new Array(16).fill(0.2),
+      },
+      {
+        memory_uid: 'dup-2',
+        user_id: 'user-1',
+        run_id: '',
+        scope: 'long-term',
+        text: 'User prefers Coke over Pepsi',
+        categories: ['preference'],
+        tags: [],
+        memory_type: 'preference',
+        domains: ['food'],
+        source_kind: 'assistant_inferred',
+        confidence: 0.8,
+        ts_event: '2026-03-09T18:05:00.000Z',
+        source: 'openclaw',
+        status: 'active',
+        sensitivity: 'internal',
+        openclaw_refs: '{}',
+        mem0_id: 'mem0-2',
+        mem0_event_id: '',
+        mem0_hash: 'hash-coke',
+        lancedb_row_key: 'dup-2',
+        vector: new Array(16).fill(0.2),
+      },
+    ]);
+    const hot = new HotMemorySearch(cfg);
+
+    const result = await hot.search({
+      query: 'Which soda do I prefer?',
+      userId: 'user-1',
+      topK: 5,
+      filters: { scope: 'long-term' },
+    });
+
+    const cokeHits = result.memories.filter((memory) => memory.text === 'User prefers Coke over Pepsi');
+    assert.equal(cokeHits.length, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
