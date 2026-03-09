@@ -10,7 +10,7 @@
     "properties": {
       "lancedbPath": {
         "type": "string",
-        "default": "~/.openclaw/workspace/data/memory_lancedb"
+        "default": "~/.openclaw/workspace/data/memory/lancedb"
       },
       "mem0": {
         "type": "object",
@@ -32,11 +32,11 @@
       },
       "outboxDbPath": {
         "type": "string",
-        "default": "~/.openclaw/workspace/data/outbox.db"
+        "default": "~/.openclaw/workspace/data/memory/outbox.json"
       },
       "auditStorePath": {
         "type": "string",
-        "default": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl"
+        "default": "~/.openclaw/workspace/data/memory/audit/memory_records.jsonl"
       },
       "debug": {
         "type": "object",

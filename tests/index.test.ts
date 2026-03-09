@@ -22,6 +22,14 @@ test('resolveConfig sets embedding migration defaults', async () => {
   assert.equal(config.autoRecall.maxChars, 1400);
 });
 
+test('resolveConfig uses the unified memory directory defaults', async () => {
+  const config = resolveConfig();
+
+  assert.equal(config.lancedbPath, '~/.openclaw/workspace/data/memory/lancedb');
+  assert.equal(config.outboxDbPath, '~/.openclaw/workspace/data/memory/outbox.json');
+  assert.equal(config.auditStorePath, '~/.openclaw/workspace/data/memory/audit/memory_records.jsonl');
+});
+
 test('resolveConfig respects embedding migration overrides', async () => {
   const config = resolveConfig({
     embeddingMigration: {

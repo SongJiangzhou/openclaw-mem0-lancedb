@@ -37,9 +37,9 @@ Add the plugin entry to `openclaw.json`:
             "baseUrl": "http://127.0.0.1:8000",
             "apiKey": ""
           },
-          "lancedbPath": "~/.openclaw/workspace/data/memory_lancedb",
-          "outboxDbPath": "~/.openclaw/workspace/data/outbox.json",
-          "auditStorePath": "~/.openclaw/workspace/data/memory_audit/memory_records.jsonl",
+          "lancedbPath": "~/.openclaw/workspace/data/memory/lancedb",
+          "outboxDbPath": "~/.openclaw/workspace/data/memory/outbox.json",
+          "auditStorePath": "~/.openclaw/workspace/data/memory/audit/memory_records.jsonl",
           "autoRecall": {
             "enabled": false,
             "topK": 5,

@@ -42,13 +42,13 @@ export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): Plu
   const mem0 = resolveMem0Config(raw);
 
   return {
-    lancedbPath: raw?.lancedbPath || '~/.openclaw/workspace/data/memory_lancedb',
+    lancedbPath: raw?.lancedbPath || '~/.openclaw/workspace/data/memory/lancedb',
     mem0,
     mem0Mode: mem0.mode,
     mem0BaseUrl: mem0.baseUrl,
     mem0ApiKey: mem0.apiKey,
-    outboxDbPath: raw?.outboxDbPath || '~/.openclaw/workspace/data/outbox.json',
-    auditStorePath: raw?.auditStorePath || '~/.openclaw/workspace/data/memory_audit/memory_records.jsonl',
+    outboxDbPath: raw?.outboxDbPath || '~/.openclaw/workspace/data/memory/outbox.json',
+    auditStorePath: raw?.auditStorePath || '~/.openclaw/workspace/data/memory/audit/memory_records.jsonl',
     autoRecall: {
       enabled: raw?.autoRecall?.enabled ?? true,
       topK: raw?.autoRecall?.topK || 8,
