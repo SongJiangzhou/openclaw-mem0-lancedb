@@ -25,6 +25,11 @@ export async function discoverMemoryTables(dbPath: string, currentDim?: number):
       continue;
     }
 
+    if (/^memory_records(?:_d\d+)?_legacy_\d+$/.test(name)) {
+      tables.push({ dimension: 0, name });
+      continue;
+    }
+
     const dimMatch = name.match(/^memory_records_d(\d+)$/);
     if (dimMatch) {
       tables.push({ dimension: parseInt(dimMatch[1], 10), name });

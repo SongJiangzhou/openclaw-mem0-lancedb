@@ -1,4 +1,4 @@
-import { openMemoryTable } from '../db/table';
+import { getTableSchemaFields, openMemoryTable, sanitizeRecordsForSchema } from '../db/table';
 import type { MemoryRow } from '../db/schema';
 import { embedText } from '../hot/embedder';
 import type { MemorySyncPayload, EmbeddingConfig } from '../types';
@@ -47,11 +47,14 @@ export class LanceDbMemoryAdapter implements MemoryAdapter {
     const dim = this.config?.dimension || 16;
     const table = await openMemoryTable(this.lancedbPath, dim);
     const row = await toLanceRow(record, this.config);
-    
+
+    const allowedFields = await getTableSchemaFields(table);
+    const safeRows = sanitizeRecordsForSchema([row as unknown as Record<string, unknown>], allowedFields);
+
     await table.mergeInsert('memory_uid')
       .whenMatchedUpdateAll()
       .whenNotMatchedInsertAll()
-      .execute([row as unknown as Record<string, unknown>]);
+      .execute(safeRows);
   }
 
   async exists(memoryUid: string): Promise<boolean> {

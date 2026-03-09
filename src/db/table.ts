@@ -56,10 +56,39 @@ export async function openMemoryTable(dbPath: string, dim: number = 16) {
   return tbl;
 }
 
+export async function openMemoryTableByName(dbPath: string, tableName: string) {
+  const resolvedPath = dbPath.startsWith('~/')
+    ? path.join(os.homedir(), dbPath.slice(2))
+    : dbPath;
+
+  const db = await lancedb.connect(resolvedPath);
+  return db.openTable(tableName);
+}
+
 export async function ensureFtsIndex(tbl: Awaited<ReturnType<typeof openMemoryTable>>) {
   try {
     await tbl.createIndex('text', { config: (lancedb as any).Index?.fts?.() });
   } catch (_) {
     // FTS 索引建立失败时静默，不影响基本检索
   }
+}
+
+export async function getTableSchemaFields(tbl: Awaited<ReturnType<typeof openMemoryTable>>): Promise<Set<string>> {
+  const schema = await tbl.schema();
+  return new Set(schema.fields.map((field: any) => String(field.name)));
+}
+
+export function sanitizeRecordsForSchema(
+  records: Record<string, unknown>[],
+  allowedFields: Set<string>,
+): Record<string, unknown>[] {
+  return records.map((record) => {
+    const sanitized: Record<string, unknown> = {};
+    for (const key of Object.keys(record)) {
+      if (allowedFields.has(key)) {
+        sanitized[key] = record[key];
+      }
+    }
+    return sanitized;
+  });
 }
