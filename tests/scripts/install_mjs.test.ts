@@ -54,6 +54,9 @@ test('install.mjs --yes writes defaults into openclaw.json', () => {
   const pluginConfig = config.plugins.entries['openclaw-mem0-lancedb']?.config;
 
   assert.equal(pluginConfig?.mem0?.mode, 'remote');
+  assert.equal(pluginConfig?.lancedbPath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'lancedb'));
+  assert.equal(pluginConfig?.outboxDbPath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'outbox.json'));
+  assert.equal(pluginConfig?.auditStorePath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'audit', 'memory_records.jsonl'));
   assert.equal(pluginConfig?.debug?.mode, 'basic');
   assert.equal(pluginConfig?.autoRecall?.enabled, true);
   assert.equal(pluginConfig?.autoRecall?.topK, 8);
@@ -94,6 +97,7 @@ test('install.mjs --skip-config leaves openclaw.json unchanged', () => {
 
 test('buildDefaultPluginConfig preserves an existing remote mem0 api key', async () => {
   const installer = await import(INSTALLER_PATH);
+  const memoryRoot = join(process.env.HOME || '', '.openclaw', 'workspace', 'data', 'memory');
   const config = installer.buildDefaultPluginConfig({
     mem0: {
       mode: 'remote',
@@ -110,6 +114,9 @@ test('buildDefaultPluginConfig preserves an existing remote mem0 api key', async
 
   assert.equal(config.mem0.mode, 'remote');
   assert.equal(config.mem0.apiKey, 'existing-test-key');
+  assert.equal(config.lancedbPath, join(memoryRoot, 'lancedb'));
+  assert.equal(config.outboxDbPath, join(memoryRoot, 'outbox.json'));
+  assert.equal(config.auditStorePath, join(memoryRoot, 'audit', 'memory_records.jsonl'));
   assert.equal(config.autoRecall.topK, 8);
   assert.equal(config.autoRecall.maxChars, 1400);
 });

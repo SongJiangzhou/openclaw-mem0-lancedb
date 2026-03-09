@@ -185,16 +185,17 @@ function loadJson(filePath) {
 
 export function buildDefaultPluginConfig(existingConfig = {}) {
   const existingMem0 = existingConfig?.mem0 || {};
+  const memoryRoot = path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory');
 
   return {
-    lancedbPath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_lancedb'),
+    lancedbPath: path.join(memoryRoot, 'lancedb'),
     mem0: {
       mode: 'remote',
       baseUrl: 'https://api.mem0.ai',
       apiKey: existingMem0.mode === 'remote' ? existingMem0.apiKey || '' : '',
     },
-    outboxDbPath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_outbox.db'),
-    auditStorePath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_audit', 'memory_records.jsonl'),
+    outboxDbPath: path.join(memoryRoot, 'outbox.json'),
+    auditStorePath: path.join(memoryRoot, 'audit', 'memory_records.jsonl'),
     debug: {
       mode: 'basic',
     },
@@ -215,6 +216,7 @@ export function buildDefaultPluginConfig(existingConfig = {}) {
 
 export async function promptForConfig(strings, existingConfig = {}) {
   const existingMem0 = existingConfig?.mem0 || {};
+  const memoryRoot = path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory');
   const mem0Mode = await select({
     message: strings.mem0Mode,
     options: [
@@ -296,14 +298,14 @@ export async function promptForConfig(strings, existingConfig = {}) {
   }
 
   return {
-    lancedbPath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_lancedb'),
+    lancedbPath: path.join(memoryRoot, 'lancedb'),
     mem0: {
       mode: mem0Mode,
       baseUrl: mem0BaseUrl,
       apiKey: mem0ApiKey,
     },
-    outboxDbPath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_outbox.db'),
-    auditStorePath: path.join(os.homedir(), '.openclaw', 'workspace', 'data', 'memory_audit', 'memory_records.jsonl'),
+    outboxDbPath: path.join(memoryRoot, 'outbox.json'),
+    auditStorePath: path.join(memoryRoot, 'audit', 'memory_records.jsonl'),
     debug: {
       mode: debugChoice === 'verbose-file' ? 'verbose' : debugChoice,
       ...(debugLogDir ? { logDir: debugLogDir } : {}),
