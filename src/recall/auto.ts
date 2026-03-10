@@ -6,15 +6,52 @@ export function buildAutoRecallBlock(memories: SearchResult['memories'], config:
     return '';
   }
 
-  const lines = memories
-    .slice(0, config.topK)
-    .map((memory) => `- [${memory.scope}] ${memory.text}`);
   const sourceAttr = source ? ` source="${source}"` : '';
-  let block = `<recall${sourceAttr}>\n${lines.join('\n')}\n</recall>`;
-  if (block.length > config.maxChars) {
-    block = `${block.slice(0, Math.max(0, config.maxChars - 3))}...`;
+  const header = `<recall${sourceAttr}>\n`;
+  const footer = `\n</recall>`;
+  const maxChars = Math.max(0, config.maxChars);
+  const budget = Math.max(0, maxChars - header.length - footer.length);
+  const lines: string[] = [];
+
+  for (const memory of memories.slice(0, config.topK)) {
+    const candidateLine = `- [${memory.scope}] ${memory.text}`;
+    const separator = lines.length > 0 ? 1 : 0;
+    const nextLength = lines.join('\n').length + separator + candidateLine.length;
+
+    if (nextLength <= budget) {
+      lines.push(candidateLine);
+      continue;
+    }
+
+    if (lines.length > 0) {
+      break;
+    }
+
+    const truncated = truncateRecallLine(candidateLine, budget);
+    if (truncated) {
+      lines.push(truncated);
+    }
+    break;
   }
-  return block;
+
+  if (lines.length === 0) {
+    return `${header.trimEnd()}</recall>`;
+  }
+
+  return `${header}${lines.join('\n')}${footer}`;
+}
+
+function truncateRecallLine(line: string, budget: number): string {
+  if (budget <= 0) {
+    return '';
+  }
+  if (line.length <= budget) {
+    return line;
+  }
+  if (budget <= 3) {
+    return '.'.repeat(budget);
+  }
+  return `${line.slice(0, budget - 3)}...`;
 }
 
 export async function runAutoRecall(params: {

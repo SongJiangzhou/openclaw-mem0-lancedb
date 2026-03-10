@@ -56,6 +56,35 @@ test('buildAutoRecallBlock includes source attribute when provided', () => {
   assert.match(block, /source="lancedb"/);
 });
 
+test('buildAutoRecallBlock respects maxChars by dropping whole lower-priority entries', () => {
+  const block = buildAutoRecallBlock(
+    [
+      buildMemory('User prefers Coke over Pepsi'),
+      buildMemory('User also likes long detailed descriptions about beverage preferences and brand comparisons'),
+    ],
+    buildConfig({ topK: 2, maxChars: 90 }),
+    'lancedb',
+  );
+
+  assert.match(block, /User prefers Coke over Pepsi/);
+  assert.doesNotMatch(block, /brand comparisons/);
+  assert.match(block, /<\/recall>$/);
+  assert.ok(block.length <= 90);
+});
+
+test('buildAutoRecallBlock preserves a valid block when maxChars is smaller than a single entry', () => {
+  const block = buildAutoRecallBlock(
+    [buildMemory('User prefers replies in English and values concise summaries.')],
+    buildConfig({ topK: 1, maxChars: 55 }),
+    'lancedb',
+  );
+
+  assert.match(block, /^<recall source="lancedb">/);
+  assert.match(block, /\.\.\./);
+  assert.match(block, /<\/recall>$/);
+  assert.ok(block.length <= 55);
+});
+
 test('runAutoRecall applies topK and maxChars constraints', async () => {
   const result = await runAutoRecall({
     query: 'English',
