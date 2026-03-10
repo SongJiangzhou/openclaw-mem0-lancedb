@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { PluginDebugLogger } from '../../src/debug/logger';
 import { buildAutoRecallBlock, runAutoRecall } from '../../src/recall/auto';
+import { buildRecallQueryVariants, type RecallQueryVariant } from '../../src/recall/query-rewrite';
 import type { RecallReranker } from '../../src/recall/reranker';
 import type { AutoRecallConfig, MemoryRecord } from '../../src/types';
 
@@ -131,6 +132,59 @@ test('runAutoRecall fetches a wider candidate pool than the final injected topK'
   assert.ok(requestedTopK > 2);
 });
 
+test('buildRecallQueryVariants extracts a focused retrieval query from longer prompts', () => {
+  const variants = buildRecallQueryVariants(
+    'Based on earlier notes and recent auto-capture results, can you tell me what I like to eat at McDonalds? Keep it short.',
+  );
+
+  assert.equal(variants[0]?.kind, 'original');
+  assert.ok(variants.some((variant: RecallQueryVariant) => variant.kind === 'compressed'));
+  assert.ok(variants.some((variant: RecallQueryVariant) => /what i like to eat at mcdonalds/i.test(variant.text)));
+});
+
+test('buildRecallQueryVariants strips host metadata wrappers before compression', () => {
+  const variants = buildRecallQueryVariants(
+    '***REMOVED***\n***REMOVED***\n***REMOVED***\n***REMOVED***\n\nSender (untrusted metadata):',
+  );
+
+  assert.ok(variants.every((variant: RecallQueryVariant) => !/Sender \(untrusted metadata\)/i.test(variant.text)));
+  assert.ok(variants.some((variant: RecallQueryVariant) => /我喜欢吃麦当劳的哪些食物/.test(variant.text)));
+});
+
+test('runAutoRecall merges multi-query candidates so compressed queries can rescue relevant memories', async () => {
+  const queries: string[] = [];
+
+  const result = await runAutoRecall({
+    query: 'Based on earlier notes and recent auto-capture results, can you tell me what I like to eat at McDonalds? Keep it short.',
+    userId: 'user-1',
+    config: buildConfig({ topK: 1, maxChars: 200 }),
+    search: async (input) => {
+      queries.push(input.query);
+      if (/what i like to eat at mcdonalds/i.test(input.query)) {
+        return {
+          memories: [
+            buildMemory('User likes McDonalds grilled chicken burger'),
+            buildMemory('User likes McDonalds McFlurry'),
+          ],
+          source: 'lancedb',
+        };
+      }
+
+      return {
+        memories: [
+          buildMemory('User likes Zelda games'),
+          buildMemory('User likes Mario'),
+        ],
+        source: 'lancedb',
+      };
+    },
+  });
+
+  assert.ok(queries.length > 1);
+  assert.match(result.block, /McDonalds/);
+  assert.doesNotMatch(result.block, /Zelda|Mario/);
+});
+
 test('runAutoRecall reranks entity-matching memories ahead of generic domain matches', async () => {
   const result = await runAutoRecall({
     query: 'What do I like at McDonalds?',
@@ -232,6 +286,28 @@ test('runAutoRecall downranks operational path noise behind relevant preferences
   const lines = result.block.split('\n').filter((line) => line.startsWith('- '));
   assert.match(lines[0] || '', /McDonalds grilled chicken burger/);
   assert.doesNotMatch(result.block, /stock_daily/);
+});
+
+test('runAutoRecall downranks generic McDonalds query-like memories behind concrete foods', async () => {
+  const result = await runAutoRecall({
+    query: 'What foods do I like at McDonalds?',
+    userId: 'user-1',
+    config: buildConfig({ topK: 2, maxChars: 200 }),
+    search: async () => ({
+      memories: [
+        buildMemory('What foods do I like at McDonalds?'),
+        buildMemory('User likes McDonalds McFlurry'),
+        buildMemory('User likes McDonalds grilled chicken burger'),
+        buildMemory('User likes KFC egg tarts'),
+      ],
+      source: 'lancedb',
+    }),
+  });
+
+  const lines = result.block.split('\n').filter((line) => line.startsWith('- '));
+  assert.match(lines[0] || '', /McDonalds/);
+  assert.doesNotMatch(lines[0] || '', /What foods do I like at McDonalds/);
+  assert.doesNotMatch(result.block, /^.*What foods do I like at McDonalds\?.*$/m);
 });
 
 test('runAutoRecall returns empty block when search result is empty', async () => {

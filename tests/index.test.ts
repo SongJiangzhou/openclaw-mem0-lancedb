@@ -294,6 +294,63 @@ test('before_prompt_build injects auto-recall into prependSystemContext without 
   }
 });
 
+test('before_prompt_build surfaces final recall block to the user in verbose debug mode', async () => {
+  const hooks: Array<{ name: string; handler: Function }> = [];
+  const dir = mkdtempSync(join(tmpdir(), 'index-auto-recall-visible-'));
+
+  const store = new MemoryStoreTool({
+    lancedbPath: join(dir, 'lancedb'),
+    mem0BaseUrl: '',
+    mem0ApiKey: '',
+    outboxDbPath: join(dir, 'outbox.json'),
+    auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+    autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' as const },
+    autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
+    embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+  });
+
+  await store.execute({
+    text: 'User prefers concise replies',
+    userId: 'default',
+    scope: 'long-term',
+    categories: ['preference'],
+  });
+
+  try {
+    register({
+      pluginConfig: {
+        lancedbPath: join(dir, 'lancedb'),
+        outboxDbPath: join(dir, 'outbox.json'),
+        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+        embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+        autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
+        debug: { mode: 'verbose' as const },
+      },
+      registerTool() {},
+      on(name: string, handler: Function) {
+        hooks.push({ name, handler });
+      },
+    } as any);
+
+    const hook = hooks.find((entry) => entry.name === 'before_prompt_build');
+    assert.ok(hook);
+
+    const result = await hook?.handler(
+      {
+        prompt: 'How should you reply?',
+        messages: [{ role: 'user', content: 'How should you reply?' }],
+      },
+      { agentId: 'main', sessionKey: 'test-session' },
+    );
+
+    assert.match(String((result as any)?.prependSystemContext || ''), /<recall source="lancedb">/);
+    assert.match(String((result as any)?.prependContext || ''), /<debug-recall source="lancedb">/);
+    assert.match(String((result as any)?.prependContext || ''), /User prefers concise replies/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('register installs auto-capture hook when enabled and hook api exists', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
 
@@ -740,6 +797,62 @@ test('auto-capture hook strips injected recall blocks before sanitization', asyn
     const userContent = messages?.find((m) => m.role === 'user')?.content ?? '';
     assert.ok(!userContent.includes('<recall>'), 'injected block should be stripped from captured text');
     assert.ok(userContent.includes('Please reply in English'), 'actual user intent should be preserved');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('auto-capture hook strips visible debug recall blocks before sanitization', async () => {
+  const hooks: Array<{ name: string; handler: Function }> = [];
+
+  register({
+    pluginConfig: {
+      lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
+      auditStorePath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'audit', 'memory_records.jsonl'),
+      outboxDbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'outbox.json'),
+      mem0: { mode: 'remote', baseUrl: 'https://api.mem0.ai', apiKey: 'test-key' },
+      embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+      autoCapture: { enabled: true, scope: 'long-term', requireAssistantReply: false, maxCharsPerMessage: 2000 },
+    },
+    registerTool() {},
+    registerHook(name: string, handler: Function) {
+      hooks.push({ name, handler });
+    },
+  } as any);
+
+  const hook = hooks.find((entry) => entry.name === 'agent_end');
+  assert.ok(hook);
+
+  const userMsgWithInjection =
+    '<debug-recall source="lancedb">\n- [long-term] User prefers concise replies\n</debug-recall>\nPlease keep answers short.';
+
+  let capturedPayload: unknown = null;
+  const originalFetch = global.fetch;
+  global.fetch = (async (url: string, init: any) => {
+    if (url.includes('/v1/memories/') && init?.method === 'POST') {
+      capturedPayload = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ event_id: 'evt-x' }) };
+    }
+    return { ok: true, json: async () => ({ status: 'completed', items: [] }) };
+  }) as typeof fetch;
+
+  try {
+    await hook.handler(
+      {
+        messages: [
+          { role: 'user', content: userMsgWithInjection },
+          { role: 'assistant', content: 'Understood.' },
+        ],
+        success: true,
+      },
+      { agentId: 'main', sessionKey: 'test-session' },
+    );
+
+    assert.ok(capturedPayload !== null, 'expected capture payload to be submitted');
+    const messages = (capturedPayload as any)?.messages as Array<{ role: string; content: string }>;
+    const userContent = messages?.find((m) => m.role === 'user')?.content ?? '';
+    assert.ok(!userContent.includes('<debug-recall>'), 'visible debug block should be stripped from captured text');
+    assert.ok(userContent.includes('Please keep answers short.'), 'actual user intent should be preserved');
   } finally {
     global.fetch = originalFetch;
   }

@@ -1,5 +1,6 @@
 import type { AutoRecallConfig, SearchResult } from '../types';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
+import { buildRecallQueryVariants } from './query-rewrite';
 import { createLocalRecallReranker, type RecallReranker } from './reranker';
 
 const RECALL_FETCH_MULTIPLIER = 4;
@@ -79,12 +80,22 @@ export async function runAutoRecall(params: {
   });
 
   const candidateTopK = Math.max(params.config.topK * RECALL_FETCH_MULTIPLIER, params.config.topK, RECALL_FETCH_MIN);
-  const result = await params.search({
-    query: params.query,
-    userId: params.userId,
-    topK: candidateTopK,
-    filters: params.config.scope === 'long-term' ? { scope: 'long-term' } : undefined,
+  const queryVariants = buildRecallQueryVariants(params.query);
+  params.debug?.verbose('auto_recall.variants', {
+    count: queryVariants.length,
+    variants: queryVariants.map((variant) => ({ kind: variant.kind, ...summarizeText(variant.text) })),
   });
+  const results = await Promise.all(
+    queryVariants.map((variant) =>
+      params.search({
+        query: variant.text,
+        userId: params.userId,
+        topK: candidateTopK,
+        filters: params.config.scope === 'long-term' ? { scope: 'long-term' } : undefined,
+      }),
+    ),
+  );
+  const result = mergeRecallSearchResults(results, queryVariants);
 
   if (!result.memories.length) {
     params.debug?.basic('auto_recall.empty', { source: result.source });
@@ -107,4 +118,36 @@ export async function runAutoRecall(params: {
     });
   });
   return { block, source: result.source };
+}
+
+function mergeRecallSearchResults(results: SearchResult[], variants: ReturnType<typeof buildRecallQueryVariants>): SearchResult {
+  const merged = new Map<string, { memory: SearchResult['memories'][number]; score: number }>();
+  let source: SearchResult['source'] = 'none';
+
+  results.forEach((result, variantIndex) => {
+    if (source === 'none' && result.source !== 'none') {
+      source = result.source;
+    }
+
+    const variantWeight = variants[variantIndex]?.weight ?? 1;
+    result.memories.forEach((memory, index) => {
+      const key = memory.memory_uid || `${memory.scope}:${memory.text}`;
+      const rankScore = ((result.memories.length - index) / Math.max(result.memories.length, 1)) * variantWeight;
+      const existing = merged.get(key);
+
+      if (existing) {
+        existing.score += rankScore;
+        return;
+      }
+
+      merged.set(key, { memory, score: rankScore });
+    });
+  });
+
+  return {
+    source,
+    memories: [...merged.values()]
+      .sort((left, right) => right.score - left.score)
+      .map((entry) => entry.memory),
+  };
 }

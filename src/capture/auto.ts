@@ -67,6 +67,7 @@ export function stripInjectedArtifacts(value: string): string {
   return String(value || '')
     .replace(/<capture[^>]*>[\s\S]*?<\/capture>/g, '')
     .replace(/<recall[^>]*>[\s\S]*?<\/recall>/g, '')
+    .replace(/<debug-recall[^>]*>[\s\S]*?<\/debug-recall>/g, '')
     .replace(/<relevant_memories[^>]*>[\s\S]*?<\/relevant_memories>/g, '')
     .replace(/(?:Sender|Conversation info) \(untrusted metadata\):\n***REMOVED***\n[\s\S]*?***REMOVED***\n?/g, '')
     .replace(/\[\[reply_to_current\]\]\s*/g, '')
@@ -75,7 +76,7 @@ export function stripInjectedArtifacts(value: string): string {
 }
 
 export function containsInjectedArtifacts(value: string): boolean {
-  return /<capture\b|<recall\b|<relevant_memories\b|\[\[reply_to_current\]\]|(?:Sender|Conversation info) \(untrusted metadata\):/i.test(
+  return /<capture\b|<recall\b|<debug-recall\b|<relevant_memories\b|\[\[reply_to_current\]\]|(?:Sender|Conversation info) \(untrusted metadata\):/i.test(
     String(value || ''),
   );
 }

@@ -311,12 +311,16 @@ export default function register(api: OpenClawApi) {
         pendingBlock = buildPendingCaptureBlock(pending);
       }
 
-      const prependContext = [pendingBlock, recall.block].filter(Boolean).join('\n\n');
-      if (!prependContext) {
+      const prependSystemContext = [pendingBlock, recall.block].filter(Boolean).join('\n\n');
+      const prependContext = cfg.debug?.mode === 'verbose' ? buildVisibleRecallDebugBlock(recall.block) : '';
+      if (!prependSystemContext && !prependContext) {
         return null;
       }
 
-      return { prependSystemContext: prependContext };
+      return {
+        prependSystemContext: prependSystemContext || undefined,
+        prependContext: prependContext || undefined,
+      };
     }, { name: 'mem0-auto-recall' });
   }
 
@@ -559,6 +563,17 @@ function buildPendingCaptureBlock(notification: Record<string, any> | null): str
   }
 
   return `<capture via="${via}" count="${count}"${synced}>\n${lines.join('\n')}\n</capture>`;
+}
+
+function buildVisibleRecallDebugBlock(recallBlock: string): string {
+  const block = String(recallBlock || '').trim();
+  if (!block) {
+    return '';
+  }
+
+  return block
+    .replace(/^<recall\b([^>]*)>/, '<debug-recall$1>')
+    .replace(/<\/recall>$/, '</debug-recall>');
 }
 
 function extractLatestMessages(messages: unknown[]): { latestUserMessage: string; latestAssistantMessage: string } {
