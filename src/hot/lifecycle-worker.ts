@@ -133,17 +133,7 @@ type LifecycleRunResult = {
 };
 
 async function readLatestRows(auditStore: FileAuditStore): Promise<MemoryRecord[]> {
-  const rows = await auditStore.readAll();
-  const latestByUid = new Map<string, MemoryRecord>();
-
-  for (const row of rows) {
-    const existing = latestByUid.get(row.memory_uid);
-    if (!existing || String(row.ts_event || '') > String(existing.ts_event || '')) {
-      latestByUid.set(row.memory_uid, row);
-    }
-  }
-
-  return Array.from(latestByUid.values());
+  return auditStore.readLatestRows();
 }
 
 function toPayload(record: MemoryRecord): MemorySyncPayload {

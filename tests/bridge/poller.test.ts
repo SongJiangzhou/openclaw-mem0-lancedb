@@ -1,11 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { FileAuditStore } from '../../src/audit/store';
 import { Mem0Poller } from '../../src/bridge/poller';
 import type { PluginConfig } from '../../src/types';
 
 test('Mem0Poller starts and stops without error', () => {
   const cfg: PluginConfig = {
     lancedbPath: '/tmp/test',
+    mem0Mode: 'local',
     mem0BaseUrl: 'http://localhost',
     mem0ApiKey: 'test',
     outboxDbPath: '/tmp/test/outbox.json',
@@ -19,4 +25,51 @@ test('Mem0Poller starts and stops without error', () => {
   poller.start(100);
   poller.stop();
   assert.ok(true);
+});
+
+test('Mem0Poller appends fetched memories into audit store', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'poller-audit-'));
+  const cfg: PluginConfig = {
+    lancedbPath: join(dir, 'lancedb'),
+    mem0Mode: 'local',
+    mem0BaseUrl: 'http://localhost',
+    mem0ApiKey: 'test',
+    outboxDbPath: join(dir, 'outbox.json'),
+    auditStorePath: join(dir, 'audit.jsonl'),
+    autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' },
+    autoCapture: { enabled: false, scope: 'long-term', requireAssistantReply: true, maxCharsPerMessage: 2000 },
+    embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+  };
+
+  const originalFetch = globalThis.fetch;
+  const auditStore = new FileAuditStore(cfg.auditStorePath);
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    results: [
+      {
+        id: 'mem-1',
+        memory: 'User prefers sparkling water over soda.',
+        user_id: 'default',
+        created_at: '2026-03-12T00:00:00.000Z',
+        metadata: {
+          scope: 'long-term',
+          categories: ['preference'],
+          source_kind: 'user_explicit',
+          confidence: 0.9,
+        },
+      },
+    ],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as any;
+
+  try {
+    const poller = new Mem0Poller(cfg, undefined, auditStore);
+    await poller.poll();
+    const rows = await auditStore.readAll();
+
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.text, 'User prefers sparkling water over soda.');
+    assert.equal(rows[0]?.user_id, 'default');
+  } finally {
+    globalThis.fetch = originalFetch;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

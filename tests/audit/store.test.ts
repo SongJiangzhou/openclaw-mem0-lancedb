@@ -57,3 +57,37 @@ test('audit store persists records and looks them up by file path', async () => 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('audit store can stream latest rows by memory uid', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'audit-store-latest-'));
+
+  try {
+    const audit = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
+    const first = buildRecord();
+    const second = {
+      ...buildRecord(),
+      memory_uid: 'm-1',
+      text: 'User preference: reply concisely',
+      ts_event: '2026-03-08T12:00:00.000Z',
+    };
+    const other = {
+      ...buildRecord(),
+      memory_uid: 'm-2',
+      text: 'User prefers sparkling water',
+      ts_event: '2026-03-07T13:00:00.000Z',
+    };
+
+    await audit.append(first);
+    await audit.append(other);
+    await audit.append(second);
+
+    const latest = await audit.readLatestRows();
+    const latestByUid = new Map(latest.map((row) => [row.memory_uid, row]));
+
+    assert.equal(latestByUid.size, 2);
+    assert.equal(latestByUid.get('m-1')?.text, 'User preference: reply concisely');
+    assert.equal(latestByUid.get('m-2')?.text, 'User prefers sparkling water');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

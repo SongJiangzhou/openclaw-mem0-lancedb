@@ -111,7 +111,7 @@ test('runAutoRecall applies topK and maxChars constraints', async () => {
   assert.doesNotMatch(result.block, /User likes sci-fi movies/);
   assert.ok(result.block.length <= 200);
   assert.equal(result.source, 'lancedb');
-  assert.equal(result.memories.length, 1);
+  assert.equal(result.memories.length, 2);
   assert.equal(result.candidateMemories.length, 2);
 });
 

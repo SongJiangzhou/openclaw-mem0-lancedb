@@ -1,5 +1,6 @@
-import { promises as fs } from 'node:fs';
+import { createReadStream, promises as fs } from 'node:fs';
 import * as path from 'node:path';
+import * as readline from 'node:readline';
 
 import type { MemoryRecord } from '../types';
 
@@ -16,14 +17,69 @@ export class FileAuditStore {
   }
 
   async findLatestByFilePath(filePath: string): Promise<MemoryRecord | null> {
-    const rows = await this.readAll();
-    const matches = rows.filter((row) => row.openclaw_refs?.file_path === filePath);
-    if (matches.length === 0) {
-      return null;
-    }
+    try {
+      const input = createReadStream(this.filePath, { encoding: 'utf-8' });
+      const rl = readline.createInterface({ input, crlfDelay: Infinity });
+      let latest: MemoryRecord | null = null;
 
-    matches.sort((left, right) => right.ts_event.localeCompare(left.ts_event));
-    return matches[0];
+      for await (const rawLine of rl) {
+        const line = rawLine.trim();
+        if (!line) {
+          continue;
+        }
+
+        try {
+          const row = JSON.parse(line) as MemoryRecord;
+          if (row.openclaw_refs?.file_path !== filePath) {
+            continue;
+          }
+          if (!latest || String(row.ts_event || '') > String(latest.ts_event || '')) {
+            latest = row;
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      return latest;
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async readLatestRows(): Promise<MemoryRecord[]> {
+    try {
+      const input = createReadStream(this.filePath, { encoding: 'utf-8' });
+      const rl = readline.createInterface({ input, crlfDelay: Infinity });
+      const latestByUid = new Map<string, MemoryRecord>();
+
+      for await (const rawLine of rl) {
+        const line = rawLine.trim();
+        if (!line) {
+          continue;
+        }
+
+        try {
+          const row = JSON.parse(line) as MemoryRecord;
+          const existing = latestByUid.get(row.memory_uid);
+          if (!existing || String(row.ts_event || '') > String(existing.ts_event || '')) {
+            latestByUid.set(row.memory_uid, row);
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      return Array.from(latestByUid.values());
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    }
   }
 
   async readAll(): Promise<MemoryRecord[]> {

@@ -48,17 +48,7 @@ export class MemoryConsolidationWorker {
   }
 
   async runOnce(): Promise<{ scanned: number; superseded: number }> {
-    const rows = await this.auditStore.readAll();
-    const latestByUid = new Map<string, MemoryRecord>();
-
-    for (const row of rows) {
-      const existing = latestByUid.get(row.memory_uid);
-      if (!existing || String(row.ts_event || '') > String(existing.ts_event || '')) {
-        latestByUid.set(row.memory_uid, row);
-      }
-    }
-
-    const activeRows = Array.from(latestByUid.values())
+    const activeRows = (await this.auditStore.readLatestRows())
       .map((row) => backfillLifecycleFields(row))
       .filter((row) => row.status === 'active' && row.scope === 'long-term');
     const aliasToCanonical = new Map<string, string>();

@@ -65,7 +65,7 @@ export class MemorySyncEngine {
 
     const mem0Store = await this.mem0Client.storeMemory(record);
     const mem0Event = mem0Store.status === 'submitted' && mem0Store.event_id
-      ? await this.mem0Client.waitForEvent(mem0Store.event_id, { attempts: 2, delayMs: 0 })
+      ? await this.mem0Client.waitForEvent(mem0Store.event_id, { attempts: 10, delayMs: 500 })
       : { status: 'unavailable' as const };
     const withControlPlane: MemorySyncPayload = {
       ...enrichedMemory,

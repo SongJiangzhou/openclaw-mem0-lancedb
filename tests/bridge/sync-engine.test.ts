@@ -128,3 +128,40 @@ test('sync engine returns synced when audit, mem0 and lance all succeed', async 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('sync engine waits for mem0 confirmation with a non-zero retry window', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sync-engine-wait-'));
+
+  try {
+    const adapter = new InMemoryMemoryAdapter();
+    const outbox = new FileOutbox(join(dir, 'outbox.json'));
+    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
+    let waitOptions: { attempts?: number; delayMs?: number } | undefined;
+    const mem0 = {
+      async storeMemory() {
+        return { status: 'submitted' as const, mem0_id: 'm1', event_id: 'evt-wait', hash: 'h1' };
+      },
+      async waitForEvent(_eventId: string, options?: { attempts?: number; delayMs?: number }) {
+        waitOptions = options;
+        return { status: 'confirmed' as const };
+      },
+      async captureTurn() {
+        return { status: 'unavailable' as const };
+      },
+      async fetchCapturedMemories() {
+        return [];
+      },
+      async searchMemories() {
+        return [];
+      },
+    };
+    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0 as any);
+
+    const result = await engine.processEvent('evt-wait', createMemory());
+
+    assert.equal(result.status, 'synced');
+    assert.deepEqual(waitOptions, { attempts: 10, delayMs: 500 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -187,14 +187,14 @@ export default function register(api: OpenClawApi) {
   });
 
   void maybeAutoStartLocalMem0(cfg, debug);
+  const auditStore = new FileAuditStore(cfg.auditStorePath);
 
-  const poller = new Mem0Poller(cfg, debug);
+  const poller = new Mem0Poller(cfg, debug, auditStore);
   poller.start();
   debug.basic('plugin.poller_started', {});
   const migrationWorker = new EmbeddingMigrationWorker(cfg, debug);
   migrationWorker.start();
   debug.basic('plugin.migration_worker_started', {});
-  const auditStore = new FileAuditStore(cfg.auditStorePath);
   const adapter = new LanceDbMemoryAdapter(cfg.lancedbPath, cfg.embedding);
   if (cfg.memoryConsolidation?.enabled ?? true) {
     const consolidationWorker = new MemoryConsolidationWorker(
