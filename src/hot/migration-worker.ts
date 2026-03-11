@@ -1,10 +1,11 @@
 import * as lancedb from '@lancedb/lancedb';
-import { getTableSchemaFields, openMemoryTable, openMemoryTableByName, sanitizeRecordsForSchema } from '../db/table';
-import { existsSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { clearDbCacheForPath, getTableSchemaFields, openMemoryTable, openMemoryTableByName, sanitizeRecordsForSchema } from '../db/table';
+import { existsSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import type { PluginDebugLogger } from '../debug/logger';
 import { embedText } from './embedder';
 import { discoverMemoryTables, resolveLanceDbPath } from './table-discovery';
+import { backfillLifecycleFields } from '../memory/lifecycle';
 import type { PluginConfig } from '../types';
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
@@ -15,6 +16,20 @@ const EMBEDDING_429_MAX_RETRIES = 3;
 const EMBEDDING_429_BASE_BACKOFF_MS = 1_000;
 const EMBEDDING_RATE_LIMIT_COOLDOWN_MS = 30_000;
 const VOYAGE_MAX_BATCH_SIZE = 5;
+const REQUIRED_SCHEMA_FIELDS = [
+  'memory_type',
+  'strength',
+  'stability',
+  'last_access_ts',
+  'next_review_ts',
+  'access_count',
+  'inhibition_weight',
+  'inhibition_until',
+  'utility_score',
+  'risk_score',
+  'retention_deadline',
+  'lifecycle_state',
+];
 
 type MigrationBatchResult = {
   migrated: number;
@@ -58,7 +73,9 @@ export class EmbeddingMigrationWorker {
     }
 
     this.loopEnabled = true;
-    this.scheduleNextRun(0, intervalMs);
+    void this.runLoop(intervalMs).catch((error) => {
+      this.handleLoopError(error);
+    });
   }
 
   stop(): void {
@@ -130,9 +147,18 @@ export class EmbeddingMigrationWorker {
     }
 
     this.timer = setTimeout(() => {
-      void this.runLoop(idleIntervalMs);
+      void this.runLoop(idleIntervalMs).catch((error) => {
+        this.handleLoopError(error);
+      });
     }, delayMs);
     this.timer.unref?.();
+  }
+
+  private handleLoopError(error: unknown): void {
+    this.debug?.error('embedding_migration.loop_error', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    console.error('[EmbeddingMigrationWorker] Migration loop failed:', error);
   }
 
   private async runOnceWithResult(): Promise<MigrationBatchResult> {
@@ -150,11 +176,16 @@ export class EmbeddingMigrationWorker {
 
   private async migrateBatch(): Promise<MigrationBatchResult> {
     const currentDim = this.config.embedding?.dimension || 16;
-    await this.renameOutdatedActiveTable(currentDim);
+    const existingTableNames = await this.listKnownTableNames();
+    await this.backupOrphanLegacyTables(existingTableNames);
+    const renamedActiveTable = await this.renameOutdatedActiveTable(currentDim);
+    if (renamedActiveTable) {
+      clearDbCacheForPath(this.config.lancedbPath);
+    }
 
     const batchSize = this.getEffectiveBatchSize();
     const tables = await discoverMemoryTables(this.config.lancedbPath, currentDim);
-    const legacyTables = tables.filter((table) => table.dimension !== currentDim);
+    const legacyTables = tables.filter((table) => table.name.includes('_legacy_') || table.dimension !== currentDim);
     let migrated = 0;
     let failed = 0;
     let retryableFailures = 0;
@@ -209,7 +240,7 @@ export class EmbeddingMigrationWorker {
         try {
           const migratedRow = this.toMigratedRow(
             row,
-            await this.embedLegacyText(String(row.text || '')),
+            await this.resolveMigratedVector(row, tableInfo.dimension, currentDim),
           );
 
           await this.upsertCurrentRow(migratedRow);
@@ -304,6 +335,14 @@ export class EmbeddingMigrationWorker {
     }
   }
 
+  private async resolveMigratedVector(row: any, sourceDim: number, targetDim: number): Promise<number[]> {
+    const existingVector = toNumericVector(row?.vector);
+    if (sourceDim === targetDim && existingVector.length === targetDim) {
+      return [...existingVector];
+    }
+    return this.embedLegacyText(String(row?.text || ''));
+  }
+
   private async waitForEmbeddingSlot(): Promise<void> {
     const waitMs = EMBEDDING_MIN_INTERVAL_MS - (Date.now() - this.lastEmbeddingAttemptAt);
     if (waitMs > 0) {
@@ -336,32 +375,74 @@ export class EmbeddingMigrationWorker {
     this.debug?.basic('embedding_migration.backup_table', { tableName, backupPath });
   }
 
-  private async renameOutdatedActiveTable(currentDim: number): Promise<void> {
+  private async backupOrphanLegacyTables(knownTableNames: string[]): Promise<void> {
+    const dbPath = resolveLanceDbPath(this.config.lancedbPath);
+    const known = new Set(knownTableNames);
+    const entries = readdirSync(dbPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (!/^memory_records(?:_d\d+)?_legacy_\d+\.lance$/.test(entry.name)) {
+        continue;
+      }
+
+      const tableName = entry.name.replace(/\.lance$/, '');
+      if (known.has(tableName)) {
+        continue;
+      }
+
+      const orphanPath = path.join(dbPath, entry.name);
+      const backupPath = path.join(dbPath, `${tableName}.bak`);
+      if (existsSync(backupPath)) {
+        rmSync(backupPath, { recursive: true, force: true });
+      }
+      renameSync(orphanPath, backupPath);
+      this.debug?.basic('embedding_migration.backup_orphan_legacy', { tableName, backupPath });
+    }
+  }
+
+  private async listKnownTableNames(): Promise<string[]> {
+    const dbPath = resolveLanceDbPath(this.config.lancedbPath);
+    try {
+      const db = await lancedb.connect(dbPath);
+      return db.tableNames();
+    } catch (error) {
+      this.debug?.warn('embedding_migration.table_names_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  private async renameOutdatedActiveTable(currentDim: number): Promise<boolean> {
     const dbPath = resolveLanceDbPath(this.config.lancedbPath);
     const tableName = currentDim === 16 ? 'memory_records' : `memory_records_d${currentDim}`;
     const db = await lancedb.connect(dbPath);
     const tableNames = await db.tableNames();
 
     if (!tableNames.includes(tableName)) {
-      return;
+      return false;
     }
 
     const activeTable = await db.openTable(tableName);
     const activeFields = await getTableSchemaFields(activeTable);
-    if (activeFields.has('memory_type')) {
-      return;
+    if (REQUIRED_SCHEMA_FIELDS.every((field) => activeFields.has(field))) {
+      return false;
     }
 
     activeTable.close();
 
     const lancePath = path.join(dbPath, `${tableName}.lance`);
     if (!existsSync(lancePath)) {
-      return;
+      return false;
     }
 
     const legacyPath = path.join(dbPath, `${tableName}_legacy_${Date.now()}.lance`);
     renameSync(lancePath, legacyPath);
     this.debug?.basic('embedding_migration.schema_upgrade', { tableName, legacyPath });
+    return true;
   }
 
   private shouldMigrateRow(row: any): boolean {
@@ -382,11 +463,11 @@ export class EmbeddingMigrationWorker {
   }
 
   private toMigratedRow(row: any, vector: number[]): Record<string, unknown> {
-    return {
+    const input: any = {
       memory_uid: String(row.memory_uid || ''),
       user_id: String(row.user_id || ''),
       run_id: String(row.run_id || ''),
-      scope: String(row.scope || 'long-term'),
+      scope: (row.scope === 'session' ? 'session' : 'long-term'),
       text: String(row.text || ''),
       categories: Array.isArray(row.categories) ? [...row.categories] : [],
       tags: Array.isArray(row.tags) ? [...row.tags] : [],
@@ -395,13 +476,62 @@ export class EmbeddingMigrationWorker {
       source_kind: String(row.source_kind || 'user_explicit'),
       confidence: Number(row.confidence || 0.7),
       ts_event: String(row.ts_event || new Date().toISOString()),
-      source: String(row.source || 'openclaw'),
-      status: String(row.status || 'active'),
-      sensitivity: String(row.sensitivity || 'internal'),
+      source: 'openclaw',
+      status: row.status === 'deleted' ? 'deleted' : row.status === 'superseded' ? 'superseded' : 'active',
+      sensitivity: row.sensitivity === 'public' || row.sensitivity === 'confidential' || row.sensitivity === 'restricted'
+        ? row.sensitivity
+        : 'internal',
+      lifecycle_state: String(row.lifecycle_state || ''),
+      strength: typeof row.strength === 'number' ? row.strength : undefined,
+      stability: typeof row.stability === 'number' ? row.stability : undefined,
+      last_access_ts: String(row.last_access_ts || ''),
+      next_review_ts: String(row.next_review_ts || ''),
+      access_count: typeof row.access_count === 'number' ? row.access_count : undefined,
+      inhibition_weight: typeof row.inhibition_weight === 'number' ? row.inhibition_weight : undefined,
+      inhibition_until: String(row.inhibition_until || ''),
+      utility_score: typeof row.utility_score === 'number' ? row.utility_score : undefined,
+      risk_score: typeof row.risk_score === 'number' ? row.risk_score : undefined,
+      retention_deadline: String(row.retention_deadline || ''),
       openclaw_refs: String(row.openclaw_refs || '{}'),
-      mem0_id: String(row.mem0_id || ''),
-      mem0_event_id: String(row.mem0_event_id || ''),
-      mem0_hash: String(row.mem0_hash || ''),
+      mem0: {
+        mem0_id: String(row.mem0_id || ''),
+        event_id: String(row.mem0_event_id || ''),
+        hash: String(row.mem0_hash || ''),
+      },
+    };
+    const enriched: any = backfillLifecycleFields(input as any);
+
+    return {
+      memory_uid: enriched.memory_uid,
+      user_id: enriched.user_id,
+      run_id: enriched.run_id || '',
+      scope: enriched.scope,
+      text: enriched.text,
+      categories: Array.isArray(enriched.categories) ? [...enriched.categories] : [],
+      tags: Array.isArray(enriched.tags) ? [...enriched.tags] : [],
+      memory_type: enriched.memory_type || 'generic',
+      domains: Array.isArray(enriched.domains) ? [...enriched.domains] : ['generic'],
+      source_kind: enriched.source_kind || 'user_explicit',
+      confidence: Number(enriched.confidence || 0.7),
+      ts_event: enriched.ts_event,
+      source: enriched.source,
+      status: enriched.status,
+      sensitivity: enriched.sensitivity || 'internal',
+      strength: enriched.strength,
+      stability: enriched.stability,
+      last_access_ts: enriched.last_access_ts,
+      next_review_ts: enriched.next_review_ts,
+      access_count: enriched.access_count,
+      inhibition_weight: enriched.inhibition_weight,
+      inhibition_until: enriched.inhibition_until,
+      utility_score: enriched.utility_score,
+      risk_score: enriched.risk_score,
+      retention_deadline: enriched.retention_deadline,
+      lifecycle_state: enriched.lifecycle_state,
+      openclaw_refs: typeof enriched.openclaw_refs === 'string' ? enriched.openclaw_refs : JSON.stringify(enriched.openclaw_refs || {}),
+      mem0_id: String(enriched.mem0?.mem0_id || ''),
+      mem0_event_id: String(enriched.mem0?.event_id || ''),
+      mem0_hash: String(enriched.mem0?.hash || ''),
       lancedb_row_key: String(row.lancedb_row_key || row.memory_uid || ''),
       vector,
     };
@@ -459,6 +589,35 @@ export class EmbeddingMigrationWorker {
       return 0;
     }
   }
+}
+
+function toNumericVector(rawVector: unknown): number[] {
+  if (Array.isArray(rawVector)) {
+    return rawVector.filter((value: unknown) => typeof value === 'number');
+  }
+
+  if (ArrayBuffer.isView(rawVector)) {
+    return Array.from(rawVector as unknown as Iterable<number>).filter((value: unknown) => typeof value === 'number');
+  }
+
+  if (rawVector && typeof rawVector === 'object') {
+    const candidate = rawVector as { length?: unknown; [Symbol.iterator]?: () => Iterator<unknown> };
+    if (typeof candidate[Symbol.iterator] === 'function') {
+      return Array.from(candidate as unknown as Iterable<unknown>).filter((value: unknown): value is number => typeof value === 'number');
+    }
+    if (typeof candidate.length === 'number') {
+      const values: number[] = [];
+      for (let index = 0; index < candidate.length; index += 1) {
+        const value = (rawVector as Record<number, unknown>)[index];
+        if (typeof value === 'number') {
+          values.push(value);
+        }
+      }
+      return values;
+    }
+  }
+
+  return [];
 }
 
 function escapeSqlString(value: string): string {

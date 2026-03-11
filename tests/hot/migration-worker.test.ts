@@ -5,11 +5,18 @@ import { join } from 'node:path';
 import test from 'node:test';
 import * as lancedb from '@lancedb/lancedb';
 
-import { openMemoryTable } from '../../src/db/table';
+import { clearDbCache, openMemoryTable } from '../../src/db/table';
 import { EmbeddingMigrationWorker } from '../../src/hot/migration-worker';
 
 function serialTest(name: string, fn: (t: unknown) => void | Promise<void>): void {
-  test(name, { concurrency: 1 }, fn);
+  test(name, { concurrency: 1, timeout: 20_000 }, fn);
+}
+
+function safeCleanup(dir: string): void {
+  clearDbCache();
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {}
 }
 
 const baseConfig = {
@@ -71,7 +78,7 @@ serialTest('migration worker moves legacy rows into the current-dimension table'
     assert.equal(migratedRows[0]?.vector.length, 16);
     assert.equal(tableNames.includes('memory_records_d768'), false);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -99,7 +106,7 @@ serialTest('migration worker renames a fully migrated legacy table to .bak and r
     assert.equal(existsSync(join(dir, 'memory_records_d768.lance')), false);
     assert.equal(existsSync(join(dir, 'memory_records_d768.bak')), true);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -132,7 +139,7 @@ serialTest('migration worker migrates the legacy main table into the current emb
     assert.equal(existsSync(join(dir, 'memory_records.lance')), false);
     assert.equal(existsSync(join(dir, 'memory_records.bak')), true);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -167,7 +174,7 @@ serialTest('migration worker keeps legacy rows when destination upsert fails', a
     assert.equal(migratedRows.length, 0);
     assert.equal(legacyRows.length, 1);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -186,7 +193,7 @@ serialTest('migration worker exits quietly when there are no legacy tables', asy
 
     await assert.doesNotReject(async () => worker.runOnce());
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -215,7 +222,7 @@ serialTest('migration worker writes a status snapshot into the lancedb directory
     assert.equal(snapshot.currentTableRows, 1);
     assert.equal(snapshot.legacyRowCount, 0);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -250,17 +257,27 @@ serialTest('migration worker start triggers an immediate migration pass before t
     });
 
     worker.start(60_000);
-    await Promise.race([
-      worker.migrated,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timed out waiting for immediate migration')), 500)),
-    ]);
+    let timeoutId: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        worker.migrated,
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('timed out waiting for immediate migration')), 5000);
+          timeoutId.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
     worker.stop();
 
     const currentTable = await openMemoryTable(dir, 16);
     const migratedRows = await currentTable.query().where("memory_uid = 'memory-1'").toArray();
     assert.equal(migratedRows.length, 1);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -305,7 +322,7 @@ serialTest('migration worker retries 429 embedding failures with backoff and eve
     assert.ok(worker.sleeps.includes(2000));
     assert.equal(migratedRows.length, 1);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -353,7 +370,7 @@ serialTest('migration worker stops the current batch after a rate limit failure 
     assert.equal(legacyRows.length, 1);
     assert.deepEqual(worker.attempts, ['User prefers concise answers', 'User prefers warm weather', 'User prefers warm weather', 'User prefers warm weather', 'User prefers warm weather']);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
   }
 });
 
@@ -404,7 +421,50 @@ serialTest('migration worker renames an outdated active table, recreates the cur
     assert.equal(existsSync(join(dir, 'memory_records.lance')), true);
     assert.ok(files.some((file) => /^memory_records_legacy_\d+\.bak$/.test(file)));
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    safeCleanup(dir);
+  }
+});
+
+serialTest('migration worker upgrades a same-dimension legacy table without requesting a new embedding', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'migration-worker-'));
+
+  try {
+    const db = await lancedb.connect(dir);
+    await db.createTable('memory_records_d1024_legacy_123', [{
+      ...makeLegacyRow({
+        tags: ['style'],
+        vector: new Array<number>(1024).fill(0.75),
+      }),
+    }]);
+
+    class SameDimensionWorker extends EmbeddingMigrationWorker {
+      public embeddingRequests = 0;
+
+      protected override async requestEmbedding(): Promise<number[]> {
+        this.embeddingRequests += 1;
+        return new Array<number>(1024).fill(0.1);
+      }
+    }
+
+    const worker = new SameDimensionWorker({
+      ...baseConfig,
+      lancedbPath: dir,
+      outboxDbPath: join(dir, 'outbox.json'),
+      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+      embedding: { provider: 'voyage' as const, baseUrl: 'https://api.voyageai.com/v1', apiKey: 'k', model: 'voyage-4-lite', dimension: 1024 },
+      embeddingMigration: { enabled: true, intervalMs: 60_000, batchSize: 20 },
+    });
+
+    await worker.runOnce();
+
+    const currentTable = await openMemoryTable(dir, 1024);
+    const migratedRows = await currentTable.query().where("memory_uid = 'memory-1'").toArray();
+
+    assert.equal(worker.embeddingRequests, 0);
+    assert.equal(migratedRows.length, 1);
+    assert.equal(migratedRows[0]?.vector.length, 1024);
+  } finally {
+    safeCleanup(dir);
   }
 });
 

@@ -21,7 +21,7 @@ test('discoverMemoryTables includes legacy-suffixed tables as legacy sources', a
       tables.map((table) => ({ name: table.name, dimension: table.dimension })),
       [
         { name: 'memory_records', dimension: 16 },
-        { name: 'memory_records_d768_legacy_123', dimension: 0 },
+        { name: 'memory_records_d768_legacy_123', dimension: 768 },
       ],
     );
   } finally {

@@ -2,8 +2,17 @@ import * as lancedb from '@lancedb/lancedb';
 import { getMemoryTableName } from './schema';
 import * as os from 'os';
 import * as path from 'path';
+import { initializeLifecycleFields } from '../memory/lifecycle';
 
 const dbCache = new Map<string, Promise<any>>();
+
+export function clearDbCache(): void {
+  dbCache.clear();
+}
+
+export function clearDbCacheForPath(dbPath: string): void {
+  dbCache.delete(resolveDbPath(dbPath));
+}
 
 export async function openMemoryTable(dbPath: string, dim: number = 16) {
   const resolvedPath = resolveDbPath(dbPath);
@@ -20,6 +29,13 @@ export async function openMemoryTable(dbPath: string, dim: number = 16) {
   }
 
   // 建表，使用占位记录定义 schema
+  const tsEvent = new Date().toISOString();
+  const lifecycle = initializeLifecycleFields({
+    tsEvent,
+    status: 'deleted',
+    scope: 'long-term',
+    sensitivity: 'internal',
+  });
   const tbl = await db.createTable(tableName, [{
     memory_uid: '__init__',
     user_id: '',
@@ -32,7 +48,7 @@ export async function openMemoryTable(dbPath: string, dim: number = 16) {
     domains: ['generic'],
     source_kind: 'user_explicit',
     confidence: 0.7,
-    ts_event: new Date().toISOString(),
+    ts_event: tsEvent,
     source: 'openclaw',
     status: 'deleted',
     sensitivity: 'internal',
@@ -40,6 +56,17 @@ export async function openMemoryTable(dbPath: string, dim: number = 16) {
     mem0_id: '',
     mem0_event_id: '',
     mem0_hash: '',
+    strength: lifecycle.strength,
+    stability: lifecycle.stability,
+    last_access_ts: lifecycle.last_access_ts,
+    next_review_ts: lifecycle.next_review_ts,
+    access_count: lifecycle.access_count,
+    inhibition_weight: lifecycle.inhibition_weight,
+    inhibition_until: lifecycle.inhibition_until,
+    utility_score: lifecycle.utility_score,
+    risk_score: lifecycle.risk_score,
+    retention_deadline: lifecycle.retention_deadline,
+    lifecycle_state: lifecycle.lifecycle_state,
     lancedb_row_key: '',
     vector: new Array<number>(dim).fill(0),
   }]);
@@ -52,6 +79,8 @@ export async function openMemoryTable(dbPath: string, dim: number = 16) {
     await tbl.createIndex('status'); // Scalar index
     await tbl.createIndex('scope'); // Scalar index
     await tbl.createIndex('mem0_hash'); // Scalar index
+    await tbl.createIndex('lifecycle_state'); // Scalar index
+    await tbl.createIndex('retention_deadline'); // Scalar index
   } catch (err) {
     console.warn('Index creation failed or already exists', err);
   }
