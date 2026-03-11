@@ -22,6 +22,17 @@ export interface MemoryRow {
   mem0_id: string;
   mem0_event_id: string;
   mem0_hash: string;
+  strength: number;
+  stability: number;
+  last_access_ts: string;
+  next_review_ts: string;
+  access_count: number;
+  inhibition_weight: number;
+  inhibition_until: string;
+  utility_score: number;
+  risk_score: number;
+  retention_deadline: string;
+  lifecycle_state: string;
   lancedb_row_key: string;
   vector: number[];
 }

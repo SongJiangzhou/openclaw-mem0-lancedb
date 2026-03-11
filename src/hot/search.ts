@@ -3,6 +3,7 @@ import { discoverMemoryTables } from './table-discovery';
 import { openMemoryTable } from '../db/table';
 import { getMemoryTableName } from '../db/schema';
 import { buildMemoryDedupKeys } from '../memory/dedup';
+import { backfillLifecycleFields, isRecallEligibleLifecycleState } from '../memory/lifecycle';
 import { classifyQueryDomain, classifyQueryIntent, inferMemoryAnnotations, looksLikeCredentialQuery } from '../memory/typing';
 import type { MemoryDomain, MemoryRecord, PluginConfig, SearchParams, SearchResult } from '../types';
 
@@ -73,7 +74,9 @@ export class HotMemorySearch {
     }
     
     // 去重：按 mem0_hash / 规范化文本 折叠同语义记录
-    const uniqueRows = this.deduplicateRows(allRows);
+    const uniqueRows = this.deduplicateRows(allRows)
+      .map((row) => backfillLifecycleFields(row))
+      .filter((row) => this.isRecallEligibleRow(row));
     
     if (uniqueRows.length === 0) {
       return {
@@ -246,9 +249,10 @@ export class HotMemorySearch {
     const queryDomain = classifyQueryDomain(normalizedQuery);
 
     return rows.map((r) => {
-      let ageMs = now - new Date(r.ts_event).getTime();
+      let ageMs = now - new Date(r.last_access_ts || r.ts_event).getTime();
       if (isNaN(ageMs) || ageMs < 0) ageMs = 0;
-      const decay = Math.exp(-ageMs / (1000 * 60 * 60 * 24 * 30)); // 30-day half-life roughly
+      const stabilityDays = typeof r.stability === 'number' && r.stability > 0 ? r.stability : 30;
+      const decay = Math.exp(-Math.log(2) * (ageMs / (1000 * 60 * 60 * 24)) / stabilityDays);
       const baseScore = r.__rrf_score || 1;
       const text = this.normalizeText(r.text || '');
       let lexicalBoost = 0;
@@ -266,9 +270,11 @@ export class HotMemorySearch {
       const lengthPenalty = this.computeLengthPenalty(String(r.text || ''));
       const evidenceBoost = this.computeEvidenceBoost(r);
 
+      const lifecycleBoost = this.computeLifecycleBoost(r, decay);
+
       return {
         ...r,
-        __final_score: baseScore * (0.8 + 0.2 * decay) + lexicalBoost + intentBoost + evidenceBoost - noisePenalty - lengthPenalty,
+        __final_score: baseScore * lifecycleBoost + lexicalBoost + intentBoost + evidenceBoost - noisePenalty - lengthPenalty,
       };
     }).filter((row) => row.__final_score >= MIN_FINAL_SCORE)
       .sort((a, b) => b.__final_score - a.__final_score);
@@ -338,13 +344,14 @@ export class HotMemorySearch {
     const text = String(row?.text || '');
     const normalizedText = this.normalizeText(text);
     const categories = this.listFieldToStrings(row?.categories).map((item) => this.normalizeText(item));
+    const exactQueryHit = Boolean(normalizedQuery) && normalizedText.includes(normalizedQuery);
     let penalty = 0;
 
     if (this.isMetadataNoise(normalizedText, categories)) {
       penalty += METADATA_NOISE_PENALTY;
     }
 
-    if (!tokenQuery && this.isCredentialTestNoise(normalizedText, categories)) {
+    if (!tokenQuery && this.isCredentialTestNoise(normalizedText, categories, exactQueryHit)) {
       penalty += CREDENTIAL_TEST_NOISE_PENALTY;
     }
 
@@ -355,6 +362,49 @@ export class HotMemorySearch {
     return penalty;
   }
 
+  private isRecallEligibleRow(row: any): boolean {
+    if (!isRecallEligibleLifecycleState(String(row.lifecycle_state || ''))) {
+      return false;
+    }
+
+    const deadline = String(row.retention_deadline || '');
+    if (!deadline) {
+      return true;
+    }
+
+    const deadlineTs = new Date(deadline).getTime();
+    return Number.isNaN(deadlineTs) || deadlineTs >= Date.now();
+  }
+
+  private computeLifecycleBoost(row: any, decay: number): number {
+    const hasLifecycleState =
+      typeof row?.lifecycle_state === 'string'
+      || typeof row?.strength === 'number'
+      || typeof row?.utility_score === 'number'
+      || typeof row?.stability === 'number';
+
+    if (!hasLifecycleState) {
+      return 0.8 + (0.2 * decay);
+    }
+
+    const strength = typeof row?.strength === 'number' ? row.strength : 0.6;
+    const utility = typeof row?.utility_score === 'number' ? row.utility_score : 0.5;
+    const inhibitionWeight = typeof row?.inhibition_weight === 'number' ? row.inhibition_weight : 0;
+    const inhibitionUntil = String(row?.inhibition_until || '');
+    const inhibitionActive = inhibitionUntil ? new Date(inhibitionUntil).getTime() > Date.now() : false;
+    const lifecycleState = String(row?.lifecycle_state || 'active');
+    let multiplier = 0.75 + (0.25 * decay) + (0.35 * strength) + (0.2 * utility);
+
+    if (lifecycleState === 'reinforced') {
+      multiplier += 0.2;
+    }
+    if (lifecycleState === 'inhibited' || inhibitionActive) {
+      multiplier -= Math.max(0.4, inhibitionWeight);
+    }
+
+    return Math.max(0.1, multiplier);
+  }
+
   private isMetadataNoise(text: string, categories: string[]): boolean {
     return (
       categories.includes('metadata') ||
@@ -362,7 +412,11 @@ export class HotMemorySearch {
     );
   }
 
-  private isCredentialTestNoise(text: string, categories: string[]): boolean {
+  private isCredentialTestNoise(text: string, categories: string[], exactQueryHit: boolean): boolean {
+    if (exactQueryHit) {
+      return false;
+    }
+
     return (
       categories.includes('token') ||
       categories.includes('credential') ||
@@ -477,6 +531,17 @@ export class HotMemorySearch {
       ts_event: row.ts_event,
       source: 'openclaw' as const,
       status: row.status,
+      lifecycle_state: row.lifecycle_state,
+      strength: typeof row.strength === 'number' ? row.strength : undefined,
+      stability: typeof row.stability === 'number' ? row.stability : undefined,
+      last_access_ts: row.last_access_ts || undefined,
+      next_review_ts: row.next_review_ts || undefined,
+      access_count: typeof row.access_count === 'number' ? row.access_count : undefined,
+      inhibition_weight: typeof row.inhibition_weight === 'number' ? row.inhibition_weight : undefined,
+      inhibition_until: row.inhibition_until || undefined,
+      utility_score: typeof row.utility_score === 'number' ? row.utility_score : undefined,
+      risk_score: typeof row.risk_score === 'number' ? row.risk_score : undefined,
+      retention_deadline: row.retention_deadline || undefined,
       sensitivity: row.sensitivity,
       openclaw_refs: this.parseJsonObj(row.openclaw_refs),
       mem0: {

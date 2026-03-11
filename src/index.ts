@@ -16,6 +16,9 @@ import { createRecallReranker } from './recall/reranker';
 import { Mem0Poller } from './bridge/poller';
 import { EmbeddingMigrationWorker } from './hot/migration-worker';
 import { MemoryConsolidationWorker } from './hot/consolidation-worker';
+import { MemoryReviewWorker } from './hot/review-worker';
+import { MemoryEvictionWorker } from './hot/eviction-worker';
+import { reinforceRecalledMemories } from './hot/reinforcement';
 import { PluginDebugLogger, summarizeText } from './debug/logger';
 import { isLocalMem0BaseUrl } from './control/auth';
 import type { PluginConfig } from './types';
@@ -178,11 +181,13 @@ export default function register(api: OpenClawApi) {
   const migrationWorker = new EmbeddingMigrationWorker(cfg, debug);
   migrationWorker.start();
   debug.basic('plugin.migration_worker_started', {});
+  const auditStore = new FileAuditStore(cfg.auditStorePath);
+  const adapter = new LanceDbMemoryAdapter(cfg.lancedbPath, cfg.embedding);
   if (cfg.memoryConsolidation?.enabled ?? true) {
     const consolidationWorker = new MemoryConsolidationWorker(
       {
-        auditStore: new FileAuditStore(cfg.auditStorePath),
-        adapter: new LanceDbMemoryAdapter(cfg.lancedbPath, cfg.embedding),
+        auditStore,
+        adapter,
         intervalMs: cfg.memoryConsolidation?.intervalMs || 6 * 60 * 60 * 1000,
         batchSize: cfg.memoryConsolidation?.batchSize || 50,
       },
@@ -190,6 +195,28 @@ export default function register(api: OpenClawApi) {
     );
     consolidationWorker.start();
     debug.basic('plugin.consolidation_worker_started', {});
+    const reviewWorker = new MemoryReviewWorker(
+      {
+        auditStore,
+        adapter,
+        intervalMs: cfg.memoryConsolidation?.intervalMs || 6 * 60 * 60 * 1000,
+        batchSize: cfg.memoryConsolidation?.batchSize || 50,
+      },
+      debug,
+    );
+    reviewWorker.start();
+    debug.basic('plugin.review_worker_started', {});
+    const evictionWorker = new MemoryEvictionWorker(
+      {
+        auditStore,
+        adapter,
+        intervalMs: cfg.memoryConsolidation?.intervalMs || 6 * 60 * 60 * 1000,
+        batchSize: cfg.memoryConsolidation?.batchSize || 50,
+      },
+      debug,
+    );
+    evictionWorker.start();
+    debug.basic('plugin.eviction_worker_started', {});
   }
 
   // memory slot 主工具：完全走新机制（不再桥接 memory-core）
@@ -325,6 +352,17 @@ export default function register(api: OpenClawApi) {
 
       const prependSystemContext = [pendingBlock, recall.block].filter(Boolean).join('\n\n');
       const prependContext = cfg.debug?.mode === 'verbose' ? buildVisibleRecallDebugBlock(recall.block) : '';
+      if (recall.memories.length > 0) {
+        void reinforceRecalledMemories({
+          auditStore,
+          adapter,
+          memories: recall.memories,
+        }).catch((error) => {
+          debug.error('auto_recall.reinforcement_error', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
       if (!prependSystemContext && !prependContext) {
         return null;
       }

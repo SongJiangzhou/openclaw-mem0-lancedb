@@ -520,6 +520,143 @@ test('hot plane ranking prefers concise preference memories over long summaries'
   assert.equal(ranked[0]?.memory_uid, 'concise-preference');
 });
 
+test('hot plane lifecycle filtering excludes quarantined and expired memories', { concurrency: false }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hot-search-'));
+
+  try {
+    const cfg = {
+      lancedbPath: dir,
+      mem0BaseUrl: '',
+      mem0ApiKey: '',
+      outboxDbPath: join(dir, 'outbox.json'),
+      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+      autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
+      autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
+      embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+    };
+    const tbl = await openMemoryTable(dir, 16);
+    const now = new Date().toISOString();
+    await tbl.add([
+      {
+        memory_uid: 'active-1',
+        user_id: 'user-1',
+        run_id: '',
+        scope: 'long-term',
+        text: 'User likes grilled chicken burgers.',
+        categories: ['preference'],
+        tags: [],
+        memory_type: 'preference',
+        domains: ['food'],
+        source_kind: 'user_explicit',
+        confidence: 0.9,
+        ts_event: now,
+        source: 'openclaw',
+        status: 'active',
+        sensitivity: 'internal',
+        strength: 0.9,
+        stability: 60,
+        last_access_ts: now,
+        next_review_ts: now,
+        access_count: 3,
+        inhibition_weight: 0,
+        inhibition_until: '',
+        utility_score: 0.9,
+        risk_score: 0.5,
+        retention_deadline: '2026-12-31T00:00:00.000Z',
+        lifecycle_state: 'active',
+        openclaw_refs: '{}',
+        mem0_id: '',
+        mem0_event_id: '',
+        mem0_hash: '',
+        lancedb_row_key: 'active-1',
+        vector: new Array(16).fill(0.1),
+      },
+      {
+        memory_uid: 'quarantined-1',
+        user_id: 'user-1',
+        run_id: '',
+        scope: 'long-term',
+        text: 'What foods do I like at McDonalds?',
+        categories: ['preference'],
+        tags: [],
+        memory_type: 'preference',
+        domains: ['food'],
+        source_kind: 'assistant_inferred',
+        confidence: 0.7,
+        ts_event: now,
+        source: 'openclaw',
+        status: 'active',
+        sensitivity: 'internal',
+        strength: 0.6,
+        stability: 30,
+        last_access_ts: now,
+        next_review_ts: now,
+        access_count: 0,
+        inhibition_weight: 0,
+        inhibition_until: '',
+        utility_score: 0.4,
+        risk_score: 0.5,
+        retention_deadline: '2026-12-31T00:00:00.000Z',
+        lifecycle_state: 'quarantined',
+        openclaw_refs: '{}',
+        mem0_id: '',
+        mem0_event_id: '',
+        mem0_hash: '',
+        lancedb_row_key: 'quarantined-1',
+        vector: new Array(16).fill(0.1),
+      },
+      {
+        memory_uid: 'expired-1',
+        user_id: 'user-1',
+        run_id: '',
+        scope: 'long-term',
+        text: 'User used to like fried chicken.',
+        categories: ['preference'],
+        tags: [],
+        memory_type: 'preference',
+        domains: ['food'],
+        source_kind: 'user_explicit',
+        confidence: 0.7,
+        ts_event: now,
+        source: 'openclaw',
+        status: 'active',
+        sensitivity: 'internal',
+        strength: 0.5,
+        stability: 30,
+        last_access_ts: now,
+        next_review_ts: now,
+        access_count: 0,
+        inhibition_weight: 0,
+        inhibition_until: '',
+        utility_score: 0.3,
+        risk_score: 0.5,
+        retention_deadline: '2025-01-01T00:00:00.000Z',
+        lifecycle_state: 'active',
+        openclaw_refs: '{}',
+        mem0_id: '',
+        mem0_event_id: '',
+        mem0_hash: '',
+        lancedb_row_key: 'expired-1',
+        vector: new Array(16).fill(0.1),
+      },
+    ]);
+    const hot = new HotMemorySearch(cfg);
+
+    const result = await hot.search({
+      query: 'grilled chicken',
+      userId: 'user-1',
+      topK: 5,
+      filters: { scope: 'long-term' },
+    });
+
+    assert.ok(result.memories.some((memory) => memory.memory_uid === 'active-1'));
+    assert.equal(result.memories.some((memory) => memory.memory_uid === 'quarantined-1'), false);
+    assert.equal(result.memories.some((memory) => memory.memory_uid === 'expired-1'), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('hot plane ranking prefers higher-confidence explicit memories over inferred ones', { concurrency: false }, () => {
   const cfg = {
     lancedbPath: '',

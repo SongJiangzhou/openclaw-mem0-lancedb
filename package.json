@@ -8,7 +8,7 @@
     "build": "tsc",
     "rebuild": "rm -rf dist && tsc",
     "dev": "tsc --watch",
-    "test": "node --test dist/tests/**/*.test.js",
+    "test": "node --test --test-concurrency=1 dist/tests/**/*.test.js",
     "install-plugin": "bash scripts/install.sh",
     "install-plugin:zh": "bash scripts/install_zh.sh",
     "mem0:setup": "uv venv && uv pip install mem0ai fastapi uvicorn pydantic google-genai",

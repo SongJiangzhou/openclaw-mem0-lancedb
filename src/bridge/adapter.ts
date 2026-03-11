@@ -2,6 +2,7 @@ import { getTableSchemaFields, openMemoryTable, sanitizeRecordsForSchema } from 
 import type { MemoryRow } from '../db/schema';
 import { embedText } from '../hot/embedder';
 import { buildMemoryDedupKeys } from '../memory/dedup';
+import { backfillLifecycleFields } from '../memory/lifecycle';
 import type { MemorySyncPayload, EmbeddingConfig } from '../types';
 
 export interface MemoryAdapterRecord {
@@ -134,7 +135,7 @@ function escapeSqlString(value: string): string {
 }
 
 async function toLanceRow(record: MemoryAdapterRecord, config?: EmbeddingConfig): Promise<MemoryRow> {
-  const memory = record.memory;
+  const memory = backfillLifecycleFields(record.memory);
 
   return {
     memory_uid: record.memory_uid,
@@ -156,6 +157,17 @@ async function toLanceRow(record: MemoryAdapterRecord, config?: EmbeddingConfig)
     mem0_id: memory.mem0?.mem0_id || '',
     mem0_event_id: memory.mem0?.event_id || '',
     mem0_hash: memory.mem0?.hash || '',
+    strength: memory.strength,
+    stability: memory.stability,
+    last_access_ts: memory.last_access_ts,
+    next_review_ts: memory.next_review_ts,
+    access_count: memory.access_count,
+    inhibition_weight: memory.inhibition_weight,
+    inhibition_until: memory.inhibition_until,
+    utility_score: memory.utility_score,
+    risk_score: memory.risk_score,
+    retention_deadline: memory.retention_deadline,
+    lifecycle_state: memory.lifecycle_state,
     lancedb_row_key: record.memory_uid,
     vector: await embedText(memory.text, config),
   };

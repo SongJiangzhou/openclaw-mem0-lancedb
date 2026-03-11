@@ -1,6 +1,7 @@
 import { LanceDbMemoryAdapter } from './adapter';
 import { hasMem0Auth, buildMem0Headers } from '../control/auth';
 import type { PluginDebugLogger } from '../debug/logger';
+import { backfillLifecycleFields } from '../memory/lifecycle';
 import { inferMemoryAnnotations } from '../memory/typing';
 import type { PluginConfig } from '../types';
 
@@ -74,7 +75,7 @@ export class Mem0Poller {
           sourceKind: mem.metadata?.source_kind || mem.metadata?.sourceKind,
           confidence: mem.metadata?.confidence,
         });
-        const payload = {
+        const payload = backfillLifecycleFields({
           user_id: mem.user_id || 'default',
           run_id: mem.run_id || '',
           scope: mem.metadata?.scope || 'long-term',
@@ -95,7 +96,7 @@ export class Mem0Poller {
             event_id: mem.event_id || null,
             hash: mem.hash || null,
           },
-        };
+        });
         const duplicateMemoryUid = await adapter.findDuplicateMemoryUid(payload);
         const targetMemoryUid = duplicateMemoryUid || memoryUid;
 

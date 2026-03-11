@@ -3,6 +3,7 @@ import type { Mem0Client } from '../control/mem0';
 import { buildMemoryUid } from './uid';
 import { LanceDbMemoryAdapter, type MemoryAdapter } from './adapter';
 import type { FileOutbox } from './outbox';
+import { backfillLifecycleFields } from '../memory/lifecycle';
 import type { MemoryRecord, MemorySyncPayload, MemorySyncResult } from '../types';
 
 export class MemorySyncEngine {
@@ -35,7 +36,8 @@ export class MemorySyncEngine {
       this.tsBucket(memory.ts_event),
       category,
     );
-    const record = this.toRecord(memoryUid, memory);
+    const enrichedMemory = backfillLifecycleFields(memory);
+    const record = this.toRecord(memoryUid, enrichedMemory);
 
     try {
       await this.auditStore.append(record);
@@ -44,7 +46,7 @@ export class MemorySyncEngine {
     }
 
     const idempotencyKey = `${eventId}:${memoryUid}`;
-    const payload = JSON.stringify({ event_id: eventId, memory_uid: memoryUid, memory });
+    const payload = JSON.stringify({ event_id: eventId, memory_uid: memoryUid, memory: enrichedMemory });
     const inserted = await this.outbox.enqueue(idempotencyKey, payload);
 
     if (!inserted) {
@@ -65,7 +67,7 @@ export class MemorySyncEngine {
       ? await this.mem0Client.waitForEvent(mem0Store.event_id, { attempts: 2, delayMs: 0 })
       : { status: 'unavailable' as const };
     const withControlPlane: MemorySyncPayload = {
-      ...memory,
+      ...enrichedMemory,
       mem0: mem0Store.status === 'submitted'
         ? {
             mem0_id: mem0Store.mem0_id,
@@ -109,6 +111,17 @@ export class MemorySyncEngine {
       ts_event: memory.ts_event,
       source: memory.source,
       status: memory.status,
+      lifecycle_state: memory.lifecycle_state,
+      strength: memory.strength,
+      stability: memory.stability,
+      last_access_ts: memory.last_access_ts,
+      next_review_ts: memory.next_review_ts,
+      access_count: memory.access_count,
+      inhibition_weight: memory.inhibition_weight,
+      inhibition_until: memory.inhibition_until,
+      utility_score: memory.utility_score,
+      risk_score: memory.risk_score,
+      retention_deadline: memory.retention_deadline,
       sensitivity: memory.sensitivity || 'internal',
       openclaw_refs: memory.openclaw_refs || {},
       mem0: memory.mem0 || {},

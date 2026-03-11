@@ -4,6 +4,7 @@ import type { Mem0ExtractedMemory } from '../control/mem0';
 import { FileAuditStore } from '../audit/store';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
 import { buildMemoryDedupKeys } from '../memory/dedup';
+import { backfillLifecycleFields } from '../memory/lifecycle';
 import { inferMemoryAnnotations } from '../memory/typing';
 import type { MemoryRecord, MemorySyncPayload } from '../types';
 
@@ -184,7 +185,7 @@ function toMemoryPayload(
     sourceKind: 'assistant_inferred',
   });
 
-  return {
+  return backfillLifecycleFields({
     user_id: params.userId,
     run_id: params.runId || null,
     scope: params.scope,
@@ -207,28 +208,40 @@ function toMemoryPayload(
       event_id: params.eventId,
       hash: memory.hash,
     },
-  };
+  });
 }
 
 function toRecord(memoryUid: string, memory: MemorySyncPayload, adapter: MemoryAdapter): MemoryRecord {
+  const enriched = backfillLifecycleFields(memory);
   return {
     memory_uid: memoryUid,
-    user_id: memory.user_id,
-    run_id: memory.run_id || null,
-    scope: memory.scope,
-    text: memory.text,
-    categories: memory.categories || [],
-    tags: memory.tags || [],
-    memory_type: memory.memory_type || 'generic',
-    domains: memory.domains || ['generic'],
-    source_kind: memory.source_kind || 'assistant_inferred',
-    confidence: typeof memory.confidence === 'number' ? memory.confidence : 0.7,
-    ts_event: memory.ts_event,
-    source: memory.source,
-    status: memory.status,
-    sensitivity: memory.sensitivity || 'internal',
-    openclaw_refs: memory.openclaw_refs || {},
-    mem0: memory.mem0 || {},
+    user_id: enriched.user_id,
+    run_id: enriched.run_id || null,
+    scope: enriched.scope,
+    text: enriched.text,
+    categories: enriched.categories || [],
+    tags: enriched.tags || [],
+    memory_type: enriched.memory_type || 'generic',
+    domains: enriched.domains || ['generic'],
+    source_kind: enriched.source_kind || 'assistant_inferred',
+    confidence: typeof enriched.confidence === 'number' ? enriched.confidence : 0.7,
+    ts_event: enriched.ts_event,
+    source: enriched.source,
+    status: enriched.status,
+    lifecycle_state: enriched.lifecycle_state,
+    strength: enriched.strength,
+    stability: enriched.stability,
+    last_access_ts: enriched.last_access_ts,
+    next_review_ts: enriched.next_review_ts,
+    access_count: enriched.access_count,
+    inhibition_weight: enriched.inhibition_weight,
+    inhibition_until: enriched.inhibition_until,
+    utility_score: enriched.utility_score,
+    risk_score: enriched.risk_score,
+    retention_deadline: enriched.retention_deadline,
+    sensitivity: enriched.sensitivity || 'internal',
+    openclaw_refs: enriched.openclaw_refs || {},
+    mem0: enriched.mem0 || {},
     lancedb: {
       table: adapter instanceof LanceDbMemoryAdapter ? (adapter as any).config?.dimension === 16 ? 'memory_records' : `memory_records_d${(adapter as any).config?.dimension || 16}` : 'memory_records',
       row_key: memoryUid,

@@ -34,6 +34,17 @@ export interface MemoryRecord {
     index_version?: string | null;
   };
   status: 'active' | 'superseded' | 'deleted';
+  lifecycle_state?: LifecycleState;
+  strength?: number;
+  stability?: number;
+  last_access_ts?: string;
+  next_review_ts?: string;
+  access_count?: number;
+  inhibition_weight?: number;
+  inhibition_until?: string;
+  utility_score?: number;
+  risk_score?: number;
+  retention_deadline?: string;
   sensitivity?: 'public' | 'internal' | 'confidential' | 'restricted';
 }
 
@@ -187,6 +198,17 @@ export interface MemorySyncPayload {
   ts_event: string;
   source: 'openclaw';
   status: 'active' | 'superseded' | 'deleted';
+  lifecycle_state?: LifecycleState;
+  strength?: number;
+  stability?: number;
+  last_access_ts?: string;
+  next_review_ts?: string;
+  access_count?: number;
+  inhibition_weight?: number;
+  inhibition_until?: string;
+  utility_score?: number;
+  risk_score?: number;
+  retention_deadline?: string;
   sensitivity?: 'public' | 'internal' | 'confidential' | 'restricted';
   openclaw_refs?: {
     workspace_path?: string | null;
@@ -202,6 +224,8 @@ export interface MemorySyncPayload {
 }
 
 export type MemorySyncStatus = 'accepted' | 'synced' | 'partial' | 'failed' | 'duplicate';
+
+export type LifecycleState = 'active' | 'reinforced' | 'inhibited' | 'superseded' | 'quarantined' | 'deleted';
 
 export interface MemorySyncResult {
   status: MemorySyncStatus;

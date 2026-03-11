@@ -26,6 +26,14 @@ test('openMemoryTable creates table with correct schema and indices', async () =
     assert.ok(fieldNames.includes('confidence'), 'missing confidence');
     assert.ok(fieldNames.includes('mem0_id'), 'missing mem0_id');
     assert.ok(fieldNames.includes('mem0_event_id'), 'missing mem0_event_id');
+    assert.ok(fieldNames.includes('strength'), 'missing strength');
+    assert.ok(fieldNames.includes('stability'), 'missing stability');
+    assert.ok(fieldNames.includes('last_access_ts'), 'missing last_access_ts');
+    assert.ok(fieldNames.includes('next_review_ts'), 'missing next_review_ts');
+    assert.ok(fieldNames.includes('access_count'), 'missing access_count');
+    assert.ok(fieldNames.includes('inhibition_weight'), 'missing inhibition_weight');
+    assert.ok(fieldNames.includes('retention_deadline'), 'missing retention_deadline');
+    assert.ok(fieldNames.includes('lifecycle_state'), 'missing lifecycle_state');
     assert.ok(fieldNames.includes('lancedb_row_key'), 'missing lancedb_row_key');
     assert.ok(fieldNames.includes('vector'), 'missing vector');
 
@@ -36,6 +44,7 @@ test('openMemoryTable creates table with correct schema and indices', async () =
     const indices = await tbl.listIndices();
     const indexedColumns = indices.flatMap((idx: any) => idx.columns);
     assert.ok(indexedColumns.includes('user_id'), 'missing scalar index on user_id');
+    assert.ok(indexedColumns.includes('lifecycle_state'), 'missing scalar index on lifecycle_state');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

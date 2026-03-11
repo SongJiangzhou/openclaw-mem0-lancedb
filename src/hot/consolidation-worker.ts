@@ -1,6 +1,7 @@
 import { FileAuditStore } from '../audit/store';
 import type { MemoryAdapter } from '../bridge/adapter';
 import { buildMemoryDedupKeys } from '../memory/dedup';
+import { backfillLifecycleFields } from '../memory/lifecycle';
 import type { MemoryRecord, MemorySyncPayload } from '../types';
 import type { PluginDebugLogger } from '../debug/logger';
 
@@ -57,7 +58,9 @@ export class MemoryConsolidationWorker {
       }
     }
 
-    const activeRows = Array.from(latestByUid.values()).filter((row) => row.status === 'active' && row.scope === 'long-term');
+    const activeRows = Array.from(latestByUid.values())
+      .map((row) => backfillLifecycleFields(row))
+      .filter((row) => row.status === 'active' && row.scope === 'long-term');
     const aliasToCanonical = new Map<string, string>();
     const canonicalRows = new Map<string, MemoryRecord>();
     const duplicates: Array<{ duplicate: MemoryRecord; canonical: MemoryRecord }> = [];
@@ -134,15 +137,16 @@ function sourceWeight(sourceKind?: string): number {
 }
 
 function supersedeRecord(record: MemoryRecord): MemoryRecord {
-  return {
+  return backfillLifecycleFields({
     ...record,
     status: 'superseded',
+    lifecycle_state: 'superseded',
     ts_event: new Date().toISOString(),
-  };
+  });
 }
 
 function toPayload(record: MemoryRecord): MemorySyncPayload {
-  return {
+  return backfillLifecycleFields({
     user_id: record.user_id,
     run_id: record.run_id || null,
     scope: record.scope,
@@ -159,5 +163,5 @@ function toPayload(record: MemoryRecord): MemorySyncPayload {
     sensitivity: record.sensitivity || 'internal',
     openclaw_refs: record.openclaw_refs || {},
     mem0: record.mem0 || {},
-  };
+  });
 }

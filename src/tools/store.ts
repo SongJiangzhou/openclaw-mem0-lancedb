@@ -5,6 +5,7 @@ import { LanceDbMemoryAdapter } from '../bridge/adapter';
 import { FileOutbox } from '../bridge/outbox';
 import { MemorySyncEngine } from '../bridge/sync-engine';
 import { HttpMem0Client } from '../control/mem0';
+import { backfillLifecycleFields } from '../memory/lifecycle';
 import { sanitizeMemoryText } from '../capture/security';
 import { PluginDebugLogger, summarizeText } from '../debug/logger';
 import { inferMemoryAnnotations } from '../memory/typing';
@@ -82,7 +83,7 @@ export class MemoryStoreTool {
       sourceKind: params.metadata.source_kind || params.metadata.sourceKind || params.sourceKind,
       confidence: params.metadata.confidence || params.confidence,
     });
-    return {
+    return backfillLifecycleFields({
       user_id: params.userId,
       run_id: params.metadata.run_id || '',
       scope: params.scope,
@@ -103,6 +104,6 @@ export class MemoryStoreTool {
         hash: params.metadata.mem0_hash || null,
         mem0_id: params.metadata.mem0_id || null,
       },
-    };
+    });
   }
 }
