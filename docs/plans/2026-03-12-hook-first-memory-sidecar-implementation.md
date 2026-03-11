@@ -425,3 +425,12 @@ Example:
 git add docs/plans/2026-03-12-hook-first-memory-sidecar-implementation.md
 git commit -m "docs: record hook-first verification results"
 ```
+
+## Verification Notes
+
+- Implementation commit: `dd369a7` (`refactor: make memory plugin hook-first`)
+- `npm run build`: PASS
+- `node --test dist/tests/index.test.js dist/tests/capture/auto.test.js dist/tests/recall/auto.test.js`: PASS
+- `npm test`: PASS
+- `rg -n "memory tool|memory tools|hook-first|admin/debug|sidecar" README.md README.zh-CN.md src/index.ts docs/plans/2026-03-12-hook-first-memory-sidecar-design.md`: PASS
+- Residual risk: startup in tests still emits background worker/autostart logs because plugin registration boots poller/worker infrastructure immediately; coverage is green, but a future cleanup could make test registration lighter.
