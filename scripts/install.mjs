@@ -57,10 +57,8 @@ const STRINGS = {
       rerankerNone: 'none (keep merged recall order)',
       captureLongTerm: 'long-term (persistent)',
       captureSession: 'session (ephemeral)',
-      debugBasic: 'basic (recommended)',
+      debug: 'debug (recommended)',
       debugOff: 'off',
-      debugVerbose: 'verbose',
-      debugVerboseFile: 'verbose + file',
     },
   },
   zh: {
@@ -106,10 +104,8 @@ const STRINGS = {
       rerankerNone: 'none (保持召回合并顺序)',
       captureLongTerm: 'long-term (持久化的长期记忆)',
       captureSession: 'session (临时会话记忆)',
-      debugBasic: 'basic（推荐）',
+      debug: 'debug（推荐）',
       debugOff: 'off',
-      debugVerbose: 'verbose',
-      debugVerboseFile: 'verbose + file',
     },
   },
 };
@@ -246,7 +242,7 @@ export function buildDefaultPluginConfig(existingConfig = {}) {
     outboxDbPath: path.join(memoryRoot, 'outbox.json'),
     auditStorePath: path.join(memoryRoot, 'audit', 'memory_records.jsonl'),
     debug: {
-      mode: 'basic',
+      mode: 'debug',
     },
     autoRecall: {
       enabled: true,
@@ -266,7 +262,7 @@ export function buildDefaultPluginConfig(existingConfig = {}) {
       requireAssistantReply: existingAutoCapture.requireAssistantReply ?? true,
       maxCharsPerMessage: existingAutoCapture.maxCharsPerMessage || 2000,
     },
-    ...(existingDebug.mode || existingDebug.logDir ? { debug: { mode: existingDebug.mode || 'basic', ...(existingDebug.logDir ? { logDir: existingDebug.logDir } : {}) } } : {}),
+    ...(existingDebug.mode || existingDebug.logDir ? { debug: { mode: existingDebug.mode || 'debug', ...(existingDebug.logDir ? { logDir: existingDebug.logDir } : {}) } } : {}),
   };
 }
 
@@ -491,27 +487,15 @@ export async function promptForConfig(strings, existingConfig = {}) {
   }
 
   const debugChoice = await select({
-    message: withDefaultHint(strings.debugMode, strings.choices.debugBasic, strings),
+    message: withDefaultHint(strings.debugMode, strings.choices.debug, strings),
     options: [
-      { value: 'basic', label: strings.choices.debugBasic },
+      { value: 'debug', label: strings.choices.debug },
       { value: 'off', label: strings.choices.debugOff },
-      { value: 'verbose', label: strings.choices.debugVerbose },
-      { value: 'verbose-file', label: strings.choices.debugVerboseFile },
     ],
-    initialValue: existingDebug.logDir ? 'verbose-file' : existingDebug.mode || 'basic',
+    initialValue: existingDebug.mode || 'debug',
   });
   if (isCancel(debugChoice)) process.exit(1);
-  let debugLogDir;
-  if (debugChoice === 'verbose-file') {
-    const currentDebugLogDir = existingDebug.logDir || '~/.openclaw/workspace/logs/openclaw-mem0-lancedb';
-    const value = await text({
-      message: withDefaultHint(strings.debugLogDir, '~/.openclaw/workspace/logs/openclaw-mem0-lancedb', strings),
-      defaultValue: currentDebugLogDir,
-      placeholder: currentDebugLogDir,
-    });
-    if (isCancel(value)) process.exit(1);
-    debugLogDir = resolveTextPromptValue(value, currentDebugLogDir);
-  }
+  let debugLogDir = existingDebug.logDir;
 
   return {
     lancedbPath: path.join(memoryRoot, 'lancedb'),
@@ -529,7 +513,7 @@ export async function promptForConfig(strings, existingConfig = {}) {
     outboxDbPath: path.join(memoryRoot, 'outbox.json'),
     auditStorePath: path.join(memoryRoot, 'audit', 'memory_records.jsonl'),
     debug: {
-      mode: debugChoice === 'verbose-file' ? 'verbose' : debugChoice,
+      mode: debugChoice,
       ...(debugLogDir ? { logDir: debugLogDir } : {}),
     },
     autoRecall: {

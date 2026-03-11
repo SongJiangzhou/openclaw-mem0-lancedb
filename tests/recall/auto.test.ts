@@ -327,7 +327,7 @@ test('runAutoRecall returns empty block when search result is empty', async () =
 test('runAutoRecall emits debug events with hit summaries', async () => {
   const messages: string[] = [];
   const debug = new PluginDebugLogger(
-    { mode: 'verbose' },
+    { mode: 'debug' },
     { info: (msg: string) => messages.push(msg), warn: (msg: string) => messages.push(msg), error: (msg: string) => messages.push(msg) },
   );
 

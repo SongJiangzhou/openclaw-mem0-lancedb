@@ -106,7 +106,7 @@ export interface MemoryConsolidationConfig {
   batchSize: number;
 }
 
-export type DebugMode = 'off' | 'basic' | 'verbose';
+export type DebugMode = 'off' | 'debug';
 
 export interface DebugConfig {
   mode: DebugMode;

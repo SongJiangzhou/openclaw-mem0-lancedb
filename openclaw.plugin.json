@@ -65,7 +65,7 @@
         "properties": {
           "mode": {
             "type": "string",
-            "enum": ["off", "basic", "verbose"],
+            "enum": ["off", "debug"],
             "default": "off"
           },
           "logDir": {

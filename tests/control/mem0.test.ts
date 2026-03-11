@@ -458,7 +458,7 @@ test('http mem0 client returns empty extracted memories when response has no ite
 test('http mem0 client emits debug events for capture and fetch flows', async () => {
   const messages: string[] = [];
   const debug = new PluginDebugLogger(
-    { mode: 'verbose' },
+    { mode: 'debug' },
     { info: (msg: string) => messages.push(msg), warn: (msg: string) => messages.push(msg), error: (msg: string) => messages.push(msg) },
   );
   const fetchStub = (async (input: string | URL | Request) => {

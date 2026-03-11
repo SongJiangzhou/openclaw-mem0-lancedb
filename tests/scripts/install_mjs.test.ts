@@ -66,7 +66,7 @@ serialTest('install.mjs --yes writes defaults into openclaw.json', () => {
   assert.equal(pluginConfig?.lancedbPath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'lancedb'));
   assert.equal(pluginConfig?.outboxDbPath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'outbox.json'));
   assert.equal(pluginConfig?.auditStorePath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'audit', 'memory_records.jsonl'));
-  assert.equal(pluginConfig?.debug?.mode, 'basic');
+  assert.equal(pluginConfig?.debug?.mode, 'debug');
   assert.equal(pluginConfig?.autoRecall?.enabled, true);
   assert.equal(pluginConfig?.autoRecall?.topK, 8);
   assert.equal(pluginConfig?.autoRecall?.maxChars, 1400);

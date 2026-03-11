@@ -23,10 +23,10 @@ test('debug logger suppresses debug output when mode is off', async () => {
   assert.equal(messages.length, 0);
 });
 
-test('debug logger emits basic events but suppresses verbose details in basic mode', async () => {
+test('debug logger emits both basic and verbose events in debug mode', async () => {
   const messages: string[] = [];
   const logger = new PluginDebugLogger(
-    { mode: 'basic' },
+    { mode: 'debug' },
     {
       info: (msg: string) => messages.push(msg),
       warn: (msg: string) => messages.push(msg),
@@ -37,14 +37,15 @@ test('debug logger emits basic events but suppresses verbose details in basic mo
   logger.basic('memory_store.start', { userId: 'user-1' });
   logger.verbose('memory_store.payload', { text: 'secret text' });
 
-  assert.equal(messages.length, 1);
+  assert.equal(messages.length, 2);
   assert.match(messages[0] || '', /memory_store\.start/);
+  assert.match(messages[1] || '', /memory_store\.payload/);
 });
 
-test('debug logger emits verbose events, redacts api keys, and truncates text previews', async () => {
+test('debug logger redacts api keys and truncates text previews in debug mode', async () => {
   const messages: string[] = [];
   const logger = new PluginDebugLogger(
-    { mode: 'verbose' },
+    { mode: 'debug' },
     {
       info: (msg: string) => messages.push(msg),
       warn: (msg: string) => messages.push(msg),
@@ -67,7 +68,7 @@ test('debug logger mirrors structured events to a JSONL file when logDir is conf
   const dir = mkdtempSync(join(tmpdir(), 'debug-logger-'));
 
   try {
-    const logger = new PluginDebugLogger({ mode: 'basic', logDir: dir });
+    const logger = new PluginDebugLogger({ mode: 'debug', logDir: dir });
     logger.basic('auto_capture.submitted', { eventId: 'evt-1', userId: 'user-1' });
 
     const date = new Intl.DateTimeFormat('sv-SE', {

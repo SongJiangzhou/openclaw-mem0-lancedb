@@ -46,7 +46,7 @@ export class PluginDebugLogger {
   }
 
   verbose(event: string, fields?: Record<string, unknown>): void {
-    if (this.config.mode !== 'verbose') {
+    if (this.config.mode === 'off') {
       return;
     }
 

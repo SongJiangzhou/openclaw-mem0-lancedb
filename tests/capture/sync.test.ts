@@ -102,7 +102,7 @@ test('capture sync emits debug events for synced and duplicate memories', async 
   try {
     const messages: string[] = [];
     const debug = new PluginDebugLogger(
-      { mode: 'verbose' },
+      { mode: 'debug' },
       { info: (msg: string) => messages.push(msg), warn: (msg: string) => messages.push(msg), error: (msg: string) => messages.push(msg) },
     );
     const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));

@@ -218,13 +218,13 @@ test('resolveConfig sets debug defaults', async () => {
 
 test('resolveConfig respects debug overrides', async () => {
   const config = resolveConfig({
-    debug: {
-      mode: 'verbose',
+      debug: {
+      mode: 'debug',
       logDir: '/tmp/openclaw-debug',
     },
   } as any);
 
-  assert.equal(config.debug?.mode, 'verbose');
+  assert.equal(config.debug?.mode, 'debug');
   assert.equal(config.debug?.logDir, '/tmp/openclaw-debug');
 });
 
@@ -280,7 +280,7 @@ test('register includes plugin version in structured debug log file', async () =
   try {
     register({
       pluginConfig: {
-        debug: { mode: 'basic', logDir: dir },
+        debug: { mode: 'debug', logDir: dir },
       },
       registerTool() {},
     } as any);
@@ -358,7 +358,7 @@ test('before_prompt_build injects auto-recall into prependSystemContext without 
   }
 });
 
-test('before_prompt_build surfaces final recall block to the user in verbose debug mode', async () => {
+test('before_prompt_build keeps recall hidden from user output in debug mode', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
   const dir = mkdtempSync(join(tmpdir(), 'index-auto-recall-visible-'));
 
@@ -388,7 +388,7 @@ test('before_prompt_build surfaces final recall block to the user in verbose deb
         auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
         autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
-        debug: { mode: 'verbose' as const },
+        debug: { mode: 'debug' as const },
       },
       registerTool() {},
       on(name: string, handler: Function) {
@@ -408,14 +408,13 @@ test('before_prompt_build surfaces final recall block to the user in verbose deb
     );
 
     assert.match(String((result as any)?.prependSystemContext || ''), /<recall source="lancedb">/);
-    assert.match(String((result as any)?.prependContext || ''), /<debug-recall source="lancedb">/);
-    assert.match(String((result as any)?.prependContext || ''), /User prefers concise replies/);
+    assert.equal((result as any)?.prependContext, undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('before_prompt_build surfaces an explicit empty debug-recall block in verbose mode when no memories are found', async () => {
+test('before_prompt_build logs empty recall emission in debug mode when no memories are found', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
   const dir = mkdtempSync(join(tmpdir(), 'index-auto-recall-empty-visible-'));
   const debugEvents: string[] = [];
@@ -428,7 +427,7 @@ test('before_prompt_build surfaces an explicit empty debug-recall block in verbo
         auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
         autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
-        debug: { mode: 'verbose' as const },
+        debug: { mode: 'debug' as const },
       },
       logger: {
         info(message: string) {
@@ -452,9 +451,9 @@ test('before_prompt_build surfaces an explicit empty debug-recall block in verbo
       { agentId: 'main', sessionKey: 'test-session' },
     );
 
-    assert.doesNotMatch(String((result as any)?.prependSystemContext || ''), /<recall source=/);
-    assert.match(String((result as any)?.prependContext || ''), /<debug-recall source="none"><\/debug-recall>/);
+    assert.equal(result, null);
     assert.ok(debugEvents.some((line) => line.includes('"event":"auto_recall.debug_block_emitted"')));
+    assert.ok(debugEvents.some((line) => line.includes('"source":"none"')));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1048,7 +1047,7 @@ test('auto-capture logs empty extraction instead of unavailable when direct resp
         mem0: { mode: 'remote', baseUrl: 'https://api.mem0.ai', apiKey: 'test-key' },
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
         autoCapture: { enabled: true, scope: 'long-term', requireAssistantReply: true, maxCharsPerMessage: 2000 },
-        debug: { mode: 'basic' as const },
+        debug: { mode: 'debug' as const },
       },
       logger: {
         info(msg: string) {

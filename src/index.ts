@@ -362,10 +362,9 @@ export default function register(api: OpenClawApi) {
       }
 
       const prependSystemContext = [pendingBlock, recall.block].filter(Boolean).join('\n\n');
-      const prependContext = cfg.debug?.mode === 'verbose' ? buildVisibleRecallDebugBlock(recall.block) : '';
       debug.verbose('auto_recall.debug_block_emitted', {
         source: recall.block ? (recall.source || 'lancedb') : 'none',
-        visible: Boolean(prependContext),
+        visible: false,
         hidden: Boolean(prependSystemContext),
         finalCount: recall.memories.length,
         candidateCount: recall.candidateMemories.length,
@@ -381,13 +380,12 @@ export default function register(api: OpenClawApi) {
           });
         });
       }
-      if (!prependSystemContext && !prependContext) {
+      if (!prependSystemContext) {
         return null;
       }
 
       return {
         prependSystemContext: prependSystemContext || undefined,
-        prependContext: prependContext || undefined,
       };
     }, { name: 'mem0-auto-recall' });
   }
@@ -637,17 +635,6 @@ function buildPendingCaptureBlock(notification: Record<string, any> | null): str
   }
 
   return `<capture via="${via}" count="${count}"${synced}>\n${lines.join('\n')}\n</capture>`;
-}
-
-function buildVisibleRecallDebugBlock(recallBlock: string): string {
-  const block = String(recallBlock || '').trim();
-  if (!block) {
-    return '<debug-recall source="none"></debug-recall>';
-  }
-
-  return block
-    .replace(/^<recall\b([^>]*)>/, '<debug-recall$1>')
-    .replace(/<\/recall>$/, '</debug-recall>');
 }
 
 function extractLatestMessages(messages: unknown[]): { latestUserMessage: string; latestAssistantMessage: string } {
