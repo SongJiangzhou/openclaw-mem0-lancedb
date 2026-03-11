@@ -57,7 +57,7 @@ export interface PluginConfig {
 }
 
 export interface EmbeddingConfig {
-  provider: 'openai' | 'gemini' | 'ollama' | 'fake';
+  provider: 'openai' | 'gemini' | 'ollama' | 'voyage' | 'fake';
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -97,6 +97,14 @@ export interface AutoRecallConfig {
   topK: number;
   maxChars: number;
   scope: 'long-term' | 'all';
+  reranker?: RecallRerankerConfig;
+}
+
+export interface RecallRerankerConfig {
+  provider: 'local' | 'voyage' | 'none';
+  baseUrl: string;
+  apiKey: string;
+  model: string;
 }
 
 export interface AutoCaptureConfig {

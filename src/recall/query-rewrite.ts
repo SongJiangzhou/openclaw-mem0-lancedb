@@ -61,7 +61,7 @@ function scoreSegment(text: string): number {
   const hasQuestion = /[?？]/u.test(text) ? 2 : 0;
   const hasOperationalNoise = /\/|\\|\.jsonl\b|workspace|scripts\/|openclaw\.json/i.test(text) ? -4 : 0;
   const targetLength = length >= 12 && length <= 96 ? 2 : length <= 140 ? 1 : -1;
-  const punctuationPenalty = /***REMOVED***|`[^`]+`/u.test(text) ? -2 : 0;
+  const punctuationPenalty = /[*_#>|`]/u.test(text) ? -2 : 0;
   const characterDensity = countAlphaNumericOrCjk(text) / Math.max(length, 1);
 
   return hasQuestion + hasOperationalNoise + targetLength + punctuationPenalty + characterDensity;
@@ -77,13 +77,15 @@ function buildDeclarativeRewrite(text: string): string {
 
 function extractRecallQueryBody(value: string): string {
   const raw = String(value || '');
-  const withoutCodeBlocks = raw.replace(/***REMOVED***[\s\S]*?***REMOVED***/gu, ' ');
+  const withoutCodeBlocks = raw.replace(/```[\s\S]*?```/gu, ' ');
+  const senderPrefix = new RegExp(String.raw`^sender\s*\(untrusted metadata\)\s*:\s*`, 'iu');
+  const timestampPrefix = new RegExp(String.raw`^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}.*?GMT[+-]\d+\]\s*`, 'u');
   const lines = withoutCodeBlocks
     .split(/\r?\n/u)
     .map((line) =>
       line
-        .replace(/^sender\s*\(untrusted metadata\)\s*:\s*/iu, '')
-        .replace(/^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}.*?GMT[+-]\d+\]\s*/u, '')
+        .replace(senderPrefix, '')
+        .replace(timestampPrefix, '')
         .trim(),
     )
     .filter(Boolean)
@@ -96,7 +98,7 @@ function extractRecallQueryBody(value: string): string {
 
 function normalizeQueryVariant(value: string): string {
   return String(value || '')
-    .replace(/***REMOVED***[\s\S]*?***REMOVED***/gu, ' ')
+    .replace(/<[^>]+>/gu, ' ')
     .replace(/`([^`]+)`/gu, '$1')
     .replace(/\s+/gu, ' ')
     .trim();

@@ -103,7 +103,7 @@ export async function runAutoRecall(params: {
   }
 
   const reranker = params.reranker || createLocalRecallReranker();
-  const selectedMemories = reranker.rerank(result.memories, params.query);
+  const selectedMemories = await reranker.rerank(result.memories, params.query);
   const block = buildAutoRecallBlock(selectedMemories, params.config, result.source);
   params.debug?.basic('auto_recall.done', {
     source: result.source,

@@ -15,6 +15,10 @@ export async function embedText(text: string, cfg?: EmbeddingConfig): Promise<nu
     return fakeEmbedText(normalized);
   }
 
+  if (cfg.provider === 'voyage') {
+    return fetchVoyageEmbedding(normalized, cfg);
+  }
+
   const model = resolveModel(cfg);
   try {
     const { embedding } = await embed({ model, value: normalized });
@@ -23,6 +27,34 @@ export async function embedText(text: string, cfg?: EmbeddingConfig): Promise<nu
     console.error(`[embedder] Failed to fetch ${cfg.provider} embedding:`, err);
     throw err;
   }
+}
+
+async function fetchVoyageEmbedding(text: string, cfg: EmbeddingConfig): Promise<number[]> {
+  const baseUrl = (cfg.baseUrl || 'https://api.voyageai.com/v1').replace(/\/$/, '');
+  const response = await fetch(`${baseUrl}/embeddings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cfg.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: cfg.model || 'voyage-3.5-lite',
+      input: text,
+      input_type: 'document',
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`[embedder] Voyage embedding request failed with status ${response.status}`);
+  }
+
+  const body = await response.json() as { data?: Array<{ embedding?: number[] }> };
+  const embedding = body.data?.[0]?.embedding;
+  if (!embedding || !Array.isArray(embedding)) {
+    throw new Error('[embedder] Voyage embedding response did not include an embedding');
+  }
+
+  return embedding;
 }
 
 function resolveModel(cfg: EmbeddingConfig) {
@@ -52,6 +84,8 @@ function resolveModel(cfg: EmbeddingConfig) {
       });
       return ollama.embeddingModel(cfg.model || 'nomic-embed-text');
     }
+    case 'voyage':
+      throw new Error('[embedder] voyage provider should be handled before AI SDK model resolution');
     default:
       throw new Error(`Unknown embedding provider: ${(cfg as any).provider}`);
   }

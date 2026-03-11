@@ -1,4 +1,4 @@
-import type { SearchResult } from '../types';
+import type { RecallRerankerConfig, SearchResult } from '../types';
 
 const BASE_RANK_SCALE = 1;
 const SUBSTRING_MATCH_BOOST = 1.5;
@@ -8,12 +8,12 @@ const QUERY_ECHO_PENALTY = 3;
 const OPERATIONAL_NOISE_PENALTY = 2.5;
 
 export interface RecallReranker {
-  rerank(memories: SearchResult['memories'], query: string): SearchResult['memories'];
+  rerank(memories: SearchResult['memories'], query: string): Promise<SearchResult['memories']>;
 }
 
 export function createLocalRecallReranker(): RecallReranker {
   return {
-    rerank(memories, query) {
+    async rerank(memories, query) {
       const normalizedQuery = normalizeRecallText(query);
 
       return [...memories]
@@ -25,6 +25,93 @@ export function createLocalRecallReranker(): RecallReranker {
         .map((entry) => entry.memory);
     },
   };
+}
+
+export function createRecallReranker(
+  config?: RecallRerankerConfig,
+  fetchFn: typeof fetch = fetch,
+): RecallReranker {
+  if (!config || config.provider === 'local') {
+    return createLocalRecallReranker();
+  }
+
+  if (config.provider === 'none') {
+    return {
+      async rerank(memories) {
+        return memories;
+      },
+    };
+  }
+
+  if (config.provider !== 'voyage') {
+    return createLocalRecallReranker();
+  }
+
+  const localFallback = createLocalRecallReranker();
+  return {
+    async rerank(memories, query) {
+      try {
+        const ranked = await rerankWithVoyage(memories, query, config, fetchFn);
+        return ranked;
+      } catch (error) {
+        console.warn('[recall] Voyage reranker failed, falling back to local reranker:', error);
+        return localFallback.rerank(memories, query);
+      }
+    },
+  };
+}
+
+async function rerankWithVoyage(
+  memories: SearchResult['memories'],
+  query: string,
+  config: RecallRerankerConfig,
+  fetchFn: typeof fetch,
+): Promise<SearchResult['memories']> {
+  if (memories.length <= 1) {
+    return memories;
+  }
+
+  const baseUrl = (config.baseUrl || 'https://api.voyageai.com/v1').replace(/\/$/, '');
+  const response = await fetchFn(`${baseUrl}/rerank`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.model || 'rerank-2.5-lite',
+      query,
+      documents: memories.map((memory) => memory.text),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Voyage rerank request failed with status ${response.status}`);
+  }
+
+  const body = await response.json() as { data?: Array<{ index?: number; relevance_score?: number }> };
+  const scored = body.data ?? [];
+  const rankedIndexes = new Set<number>();
+  const reranked: SearchResult['memories'] = [];
+
+  scored
+    .sort((left, right) => (right.relevance_score ?? 0) - (left.relevance_score ?? 0))
+    .forEach((entry) => {
+      const index = entry.index;
+      if (typeof index !== 'number' || index < 0 || index >= memories.length || rankedIndexes.has(index)) {
+        return;
+      }
+      rankedIndexes.add(index);
+      reranked.push(memories[index]!);
+    });
+
+  memories.forEach((memory, index) => {
+    if (!rankedIndexes.has(index)) {
+      reranked.push(memory);
+    }
+  });
+
+  return reranked;
 }
 
 function computeRecallScore(text: string, normalizedQuery: string, index: number, total: number): number {

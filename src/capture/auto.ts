@@ -69,7 +69,7 @@ export function stripInjectedArtifacts(value: string): string {
     .replace(/<recall[^>]*>[\s\S]*?<\/recall>/g, '')
     .replace(/<debug-recall[^>]*>[\s\S]*?<\/debug-recall>/g, '')
     .replace(/<relevant_memories[^>]*>[\s\S]*?<\/relevant_memories>/g, '')
-    .replace(/(?:Sender|Conversation info) \(untrusted metadata\):\n***REMOVED***\n[\s\S]*?***REMOVED***\n?/g, '')
+    .replace(/(?:Sender|Conversation info) \(untrusted metadata\):\n```[\s\S]*?```\n?/g, '')
     .replace(/\[\[reply_to_current\]\]\s*/g, '')
     .replace(/^\[[\w\s,:/+-]+\]\s*/gm, '')
     .trim();

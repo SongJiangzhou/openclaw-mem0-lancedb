@@ -77,6 +77,57 @@ test('resolveConfig maps nested mem0 config into explicit runtime mode', async (
   assert.equal(config.mem0?.autoStartLocal, true);
 });
 
+test('resolveConfig maps voyage embedding from OpenClaw memorySearch config', async () => {
+  const config = resolveConfig(undefined, {
+    agents: {
+      defaults: {
+        memorySearch: {
+          enabled: true,
+          provider: 'voyage',
+          model: 'voyage-3.5-lite',
+          remote: {
+            apiKey: 'voyage-test-key',
+            baseUrl: 'https://api.voyageai.com/v1',
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(config.embedding.provider, 'voyage');
+  assert.equal(config.embedding.apiKey, 'voyage-test-key');
+  assert.equal(config.embedding.baseUrl, 'https://api.voyageai.com/v1');
+  assert.equal(config.embedding.model, 'voyage-3.5-lite');
+});
+
+test('resolveConfig sets autoRecall reranker defaults and overrides', async () => {
+  const defaults = resolveConfig();
+  assert.equal(defaults.autoRecall.reranker?.provider, 'local');
+  assert.equal(defaults.autoRecall.reranker?.baseUrl, 'https://api.voyageai.com/v1');
+  assert.equal(defaults.autoRecall.reranker?.apiKey, '');
+  assert.equal(defaults.autoRecall.reranker?.model, 'rerank-2.5-lite');
+
+  const config = resolveConfig({
+    autoRecall: {
+      enabled: true,
+      topK: 5,
+      maxChars: 600,
+      scope: 'all',
+      reranker: {
+        provider: 'voyage',
+        apiKey: 'rerank-key',
+        baseUrl: 'https://custom.voyage.test/v1',
+        model: 'rerank-2.5',
+      },
+    },
+  } as any);
+
+  assert.equal(config.autoRecall.reranker?.provider, 'voyage');
+  assert.equal(config.autoRecall.reranker?.apiKey, 'rerank-key');
+  assert.equal(config.autoRecall.reranker?.baseUrl, 'https://custom.voyage.test/v1');
+  assert.equal(config.autoRecall.reranker?.model, 'rerank-2.5');
+});
+
 test('maybeAutoStartLocalMem0 does not spawn when local mem0 is already healthy', async () => {
   let spawnCalls = 0;
   const result = await maybeAutoStartLocalMem0(
@@ -896,7 +947,7 @@ test('auto-capture hook strips host metadata and reply markers before submission
           {
             role: 'user',
             content:
-              'Conversation info (untrusted metadata):\n***REMOVED***\n{"message_id":"1"}\n***REMOVED***\n\nI work at a technology company in office zone A.',
+              'Conversation info (untrusted metadata):\n```json\n{"message_id":"1"}\n```\n\nI work at a technology company in office zone A.',
           },
           {
             role: 'assistant',

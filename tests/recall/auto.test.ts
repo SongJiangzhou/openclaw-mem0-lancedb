@@ -144,7 +144,7 @@ test('buildRecallQueryVariants extracts a focused retrieval query from longer pr
 
 test('buildRecallQueryVariants strips host metadata wrappers before compression', () => {
   const variants = buildRecallQueryVariants(
-    '***REMOVED***\n***REMOVED***\n***REMOVED***\n***REMOVED***\n\n***REMOVED***',
+    'Sender (untrusted metadata):\n[Wed 2026-03-10 02:45 GMT+8] What foods do I like at McDonalds?\n```json\n{"message_id":"1"}\n```',
   );
 
   assert.ok(variants.every((variant: RecallQueryVariant) => !/Sender \(untrusted metadata\)/i.test(variant.text)));
@@ -207,7 +207,7 @@ test('runAutoRecall reranks entity-matching memories ahead of generic domain mat
 test('runAutoRecall supports injected rerankers for future extension', async () => {
   let invoked = false;
   const reranker: RecallReranker = {
-    rerank(memories) {
+    async rerank(memories) {
       invoked = true;
       return [memories[1], memories[0]].filter(Boolean);
     },

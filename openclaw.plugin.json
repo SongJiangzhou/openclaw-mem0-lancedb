@@ -70,6 +70,28 @@
             "type": "string",
             "enum": ["long-term", "all"],
             "default": "all"
+          },
+          "reranker": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": ["local", "voyage", "none"],
+                "default": "local"
+              },
+              "baseUrl": {
+                "type": "string",
+                "default": "https://api.voyageai.com/v1"
+              },
+              "apiKey": {
+                "type": "string",
+                "default": ""
+              },
+              "model": {
+                "type": "string",
+                "default": "rerank-2.5-lite"
+              }
+            }
           }
         }
       },

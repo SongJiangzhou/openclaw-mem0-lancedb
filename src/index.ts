@@ -12,6 +12,7 @@ import { buildAutoCapturePayload, stripInjectedArtifacts } from './capture/auto'
 import { syncCapturedMemories } from './capture/sync';
 import { HttpMem0Client } from './control/mem0';
 import { runAutoRecall } from './recall/auto';
+import { createRecallReranker } from './recall/reranker';
 import { Mem0Poller } from './bridge/poller';
 import { EmbeddingMigrationWorker } from './hot/migration-worker';
 import { MemoryConsolidationWorker } from './hot/consolidation-worker';
@@ -64,6 +65,12 @@ export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): Plu
       topK: raw?.autoRecall?.topK || 8,
       maxChars: raw?.autoRecall?.maxChars || 1400,
       scope: raw?.autoRecall?.scope || 'all',
+      reranker: {
+        provider: raw?.autoRecall?.reranker?.provider || 'local',
+        baseUrl: raw?.autoRecall?.reranker?.baseUrl || 'https://api.voyageai.com/v1',
+        apiKey: raw?.autoRecall?.reranker?.apiKey || '',
+        model: raw?.autoRecall?.reranker?.model || 'rerank-2.5-lite',
+      },
     },
     autoCapture: {
       enabled: raw?.autoCapture?.enabled || false,
@@ -110,7 +117,7 @@ function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): P
   }
 
   const ms = apiConfig?.agents?.defaults?.memorySearch;
-  if (ms?.enabled && ms?.provider && ['openai', 'gemini', 'ollama'].includes(ms.provider)) {
+  if (ms?.enabled && ms?.provider && ['openai', 'gemini', 'ollama', 'voyage'].includes(ms.provider)) {
     const p = ms.provider;
     let fallbackModel = 'text-embedding-3-small';
     let defaultDim = 1536;
@@ -124,6 +131,10 @@ function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): P
       fallbackModel = 'nomic-embed-text';
       defaultDim = 768;
       defaultUrl = 'http://127.0.0.1:11434';
+    } else if (p === 'voyage') {
+      fallbackModel = 'voyage-3.5-lite';
+      defaultDim = 1024;
+      defaultUrl = 'https://api.voyageai.com/v1';
     }
 
     return {
@@ -301,6 +312,7 @@ export default function register(api: OpenClawApi) {
         userId: 'default',
         config: cfg.autoRecall,
         debug,
+        reranker: createRecallReranker(cfg.autoRecall.reranker),
         search: (params) => customSearch.execute(params),
       });
 
