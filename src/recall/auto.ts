@@ -68,10 +68,10 @@ export async function runAutoRecall(params: {
   debug?: PluginDebugLogger;
   reranker?: RecallReranker;
   search: (input: { query: string; userId: string; sessionId?: string; agentId?: string; topK: number; filters?: { scope?: string } }) => Promise<SearchResult>;
-}): Promise<{ block: string; source: string; memories: SearchResult['memories'] }> {
+}): Promise<{ block: string; source: string; memories: SearchResult['memories']; candidateMemories: SearchResult['memories'] }> {
   if (!params.config.enabled) {
     params.debug?.basic('auto_recall.skipped', { reason: 'disabled' });
-    return { block: '', source: 'none', memories: [] };
+    return { block: '', source: 'none', memories: [], candidateMemories: [] };
   }
 
   params.debug?.basic('auto_recall.start', {
@@ -103,7 +103,7 @@ export async function runAutoRecall(params: {
 
   if (!result.memories.length) {
     params.debug?.basic('auto_recall.empty', { source: result.source });
-    return { block: '', source: result.source, memories: [] };
+    return { block: '', source: result.source, memories: [], candidateMemories: [] };
   }
 
   const reranker = params.reranker || createLocalRecallReranker();
@@ -121,7 +121,7 @@ export async function runAutoRecall(params: {
       ...summarizeText(memory.text),
     });
   });
-  return { block, source: result.source, memories: selectedMemories };
+  return { block, source: result.source, memories: selectedMemories, candidateMemories: result.memories };
 }
 
 function mergeRecallSearchResults(results: SearchResult[], variants: ReturnType<typeof buildRecallQueryVariants>): SearchResult {

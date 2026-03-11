@@ -363,11 +363,11 @@ export default function register(api: OpenClawApi) {
 
       const prependSystemContext = [pendingBlock, recall.block].filter(Boolean).join('\n\n');
       const prependContext = cfg.debug?.mode === 'verbose' ? buildVisibleRecallDebugBlock(recall.block) : '';
-      if (recall.memories.length > 0) {
+      if (recall.candidateMemories.length > 0) {
         void reinforceRecalledMemories({
           auditStore,
           adapter,
-          memories: recall.memories,
+          memories: recall.candidateMemories,
         }).catch((error) => {
           debug.error('auto_recall.reinforcement_error', {
             message: error instanceof Error ? error.message : String(error),
