@@ -418,6 +418,7 @@ test('before_prompt_build surfaces final recall block to the user in verbose deb
 test('before_prompt_build surfaces an explicit empty debug-recall block in verbose mode when no memories are found', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
   const dir = mkdtempSync(join(tmpdir(), 'index-auto-recall-empty-visible-'));
+  const debugEvents: string[] = [];
 
   try {
     register({
@@ -428,6 +429,11 @@ test('before_prompt_build surfaces an explicit empty debug-recall block in verbo
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
         autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
         debug: { mode: 'verbose' as const },
+      },
+      logger: {
+        info(message: string) {
+          debugEvents.push(message);
+        },
       },
       registerTool() {},
       on(name: string, handler: Function) {
@@ -448,6 +454,7 @@ test('before_prompt_build surfaces an explicit empty debug-recall block in verbo
 
     assert.doesNotMatch(String((result as any)?.prependSystemContext || ''), /<recall source=/);
     assert.match(String((result as any)?.prependContext || ''), /<debug-recall source="none"><\/debug-recall>/);
+    assert.ok(debugEvents.some((line) => line.includes('"event":"auto_recall.debug_block_emitted"')));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

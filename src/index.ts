@@ -363,6 +363,13 @@ export default function register(api: OpenClawApi) {
 
       const prependSystemContext = [pendingBlock, recall.block].filter(Boolean).join('\n\n');
       const prependContext = cfg.debug?.mode === 'verbose' ? buildVisibleRecallDebugBlock(recall.block) : '';
+      debug.verbose('auto_recall.debug_block_emitted', {
+        source: recall.block ? (recall.source || 'lancedb') : 'none',
+        visible: Boolean(prependContext),
+        hidden: Boolean(prependSystemContext),
+        finalCount: recall.memories.length,
+        candidateCount: recall.candidateMemories.length,
+      });
       if (recall.candidateMemories.length > 0) {
         void reinforceRecalledMemories({
           auditStore,
