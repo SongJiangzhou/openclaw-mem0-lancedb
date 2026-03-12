@@ -1,3 +1,7 @@
+import { deriveRecallSizing } from './sizing';
+
+const MAX_QUERY_VARIANTS = deriveRecallSizing(1).maxQueryVariants;
+
 export type RecallQueryVariantKind = 'original' | 'compressed';
 
 export interface RecallQueryVariant {
@@ -20,7 +24,7 @@ export function buildRecallQueryVariants(query: string): RecallQueryVariant[] {
     variants.push({ text: compressed, kind: 'compressed', weight: 1.15 });
   }
 
-  return variants;
+  return variants.slice(0, MAX_QUERY_VARIANTS);
 }
 
 function collectCandidateSegments(query: string): string[] {

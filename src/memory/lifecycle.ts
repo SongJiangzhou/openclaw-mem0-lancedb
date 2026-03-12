@@ -216,15 +216,22 @@ export function shouldQuarantineLifecycle(row: Partial<MemoryRecord>, nowIso: st
   if (shouldQuarantineSessionLifecycle(existing, nowIso)) {
     return true;
   }
-  const tsEvent = String(existing.ts_event || nowIso);
-  const ageDays = Math.max(0, (new Date(nowIso).getTime() - new Date(tsEvent).getTime()) / (1000 * 60 * 60 * 24));
+  const ageDays = computeLifecycleAgeDays(existing, nowIso);
+  const effectiveStrength = computeEffectiveStrength({
+    strength: existing.strength,
+    stability: existing.stability,
+    last_access_ts: existing.last_access_ts,
+    now: nowIso,
+  });
   return existing.status === 'active'
     && existing.lifecycle_state !== 'quarantined'
-    && existing.source_kind === 'assistant_inferred'
+    && existing.lifecycle_state !== 'deleted'
+    && existing.lifecycle_state !== 'superseded'
+    && isAutoFadeEligibleSource(existing.source_kind)
     && existing.access_count === 0
-    && existing.utility_score < 0.35
-    && existing.strength < 0.5
-    && ageDays >= 30;
+    && existing.utility_score <= 0.2
+    && effectiveStrength < 0.1
+    && ageDays >= 45;
 }
 
 export function shouldQuarantineSessionLifecycle(row: Partial<MemoryRecord>, nowIso: string = new Date().toISOString()): boolean {
@@ -242,10 +249,19 @@ export function shouldQuarantineSessionLifecycle(row: Partial<MemoryRecord>, now
 
 export function shouldInhibitLifecycle(row: Partial<MemoryRecord>, nowIso: string = new Date().toISOString()): boolean {
   const existing = backfillLifecycleFields(row);
+  const effectiveStrength = computeEffectiveStrength({
+    strength: existing.strength,
+    stability: existing.stability,
+    last_access_ts: existing.last_access_ts,
+    now: nowIso,
+  });
+  const ageDays = computeLifecycleAgeDays(existing, nowIso);
   return existing.status === 'active'
     && existing.lifecycle_state === 'active'
+    && isAutoFadeEligibleSource(existing.source_kind)
     && existing.utility_score < 0.25
-    && existing.strength < 0.45;
+    && effectiveStrength < 0.2
+    && ageDays >= 14;
 }
 
 export function inhibitionExpired(row: Partial<MemoryRecord>, nowIso: string = new Date().toISOString()): boolean {
@@ -307,4 +323,13 @@ function normalizeLifecycleState(value: string, status: 'active' | 'superseded' 
     default:
       return mapStatusToLifecycleState(status);
   }
+}
+
+function isAutoFadeEligibleSource(sourceKind: string | undefined): boolean {
+  return sourceKind === 'assistant_inferred' || sourceKind === 'system_generated';
+}
+
+function computeLifecycleAgeDays(row: Partial<MemoryRecord>, nowIso: string): number {
+  const referenceTs = String(row.last_access_ts || row.ts_event || nowIso);
+  return Math.max(0, (new Date(nowIso).getTime() - new Date(referenceTs).getTime()) / (1000 * 60 * 60 * 24));
 }

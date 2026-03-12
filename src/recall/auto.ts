@@ -2,9 +2,7 @@ import type { AutoRecallConfig, SearchResult } from '../types';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
 import { buildRecallQueryVariants } from './query-rewrite';
 import { createLocalRecallReranker, type RecallReranker } from './reranker';
-
-const RECALL_FETCH_MULTIPLIER = 2;
-const RECALL_FETCH_MIN = 12;
+import { deriveRecallSizing } from './sizing';
 
 export function buildAutoRecallBlock(memories: SearchResult['memories'], config: AutoRecallConfig, source?: string): string {
   if (!memories.length) {
@@ -81,7 +79,8 @@ export async function runAutoRecall(params: {
     ...summarizeText(params.query),
   });
 
-  const candidateTopK = Math.max(params.config.topK * RECALL_FETCH_MULTIPLIER, params.config.topK, RECALL_FETCH_MIN);
+  const sizing = deriveRecallSizing(params.config.topK);
+  const candidateTopK = sizing.candidateTopK;
   const queryVariants = buildRecallQueryVariants(params.query);
   params.debug?.verbose('auto_recall.variants', {
     count: queryVariants.length,

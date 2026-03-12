@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
   backfillLifecycleFields,
+  computeEffectiveStrength,
   computeRetentionDeadline,
   initializeLifecycleFields,
   mapStatusToLifecycleState,
+  shouldInhibitLifecycle,
+  shouldQuarantineLifecycle,
   shouldQuarantineSessionLifecycle,
 } from '../../src/memory/lifecycle';
 
@@ -77,6 +80,53 @@ test('session memories quarantine after one day of inactivity', () => {
   }, '2026-03-12T12:00:00.000Z');
 
   assert.equal(shouldQuarantine, true);
+});
+
+test('auto fade-out ignores weak stale user-explicit memories for quarantine and inhibition', () => {
+  const row = {
+    scope: 'long-term' as const,
+    status: 'active' as const,
+    lifecycle_state: 'active' as const,
+    source_kind: 'user_explicit' as const,
+    ts_event: '2026-01-01T00:00:00.000Z',
+    last_access_ts: '2026-01-01T00:00:00.000Z',
+    stability: 10,
+    strength: 0.2,
+    utility_score: 0.1,
+    access_count: 0,
+    retention_deadline: '2026-12-31T00:00:00.000Z',
+  };
+
+  assert.equal(shouldInhibitLifecycle(row, '2026-03-13T00:00:00.000Z'), false);
+  assert.equal(shouldQuarantineLifecycle(row, '2026-03-13T00:00:00.000Z'), false);
+});
+
+test('auto fade-out uses last access and effective strength for inferred memories', () => {
+  const row = {
+    scope: 'long-term' as const,
+    status: 'active' as const,
+    lifecycle_state: 'active' as const,
+    source_kind: 'assistant_inferred' as const,
+    ts_event: '2026-01-01T00:00:00.000Z',
+    last_access_ts: '2026-01-01T00:00:00.000Z',
+    stability: 10,
+    strength: 0.2,
+    utility_score: 0.15,
+    access_count: 0,
+    retention_deadline: '2026-12-31T00:00:00.000Z',
+  };
+
+  assert.equal(
+    computeEffectiveStrength({
+      strength: row.strength,
+      stability: row.stability,
+      last_access_ts: row.last_access_ts,
+      now: '2026-03-13T00:00:00.000Z',
+    }) < 0.05,
+    true,
+  );
+  assert.equal(shouldInhibitLifecycle(row, '2026-03-13T00:00:00.000Z'), true);
+  assert.equal(shouldQuarantineLifecycle(row, '2026-03-13T00:00:00.000Z'), true);
 });
 
 test('mapStatusToLifecycleState keeps status alignment', () => {

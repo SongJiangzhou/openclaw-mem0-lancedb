@@ -64,7 +64,7 @@ test('lifecycle worker reinforces reviewable memories', async () => {
   }
 });
 
-test('lifecycle worker deletes expired memories, quarantines stale inferred memories, and inhibits low-utility memories', async () => {
+test('lifecycle worker deletes expired memories, quarantines stale inferred memories, and inhibits low-utility generated memories', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'lifecycle-worker-evict-'));
   try {
     const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
@@ -143,20 +143,20 @@ test('lifecycle worker deletes expired memories, quarantines stale inferred memo
       user_id: 'user-1',
       run_id: null,
       scope: 'long-term',
-      text: 'Low utility but not expired.',
+      text: 'Generated operational summary with low long-term value.',
       categories: ['generic'],
       tags: [],
       memory_type: 'generic',
       domains: ['generic'],
-      source_kind: 'user_explicit',
+      source_kind: 'system_generated',
       confidence: 0.5,
-      ts_event: '2026-02-20T00:00:00.000Z',
+      ts_event: '2026-02-01T00:00:00.000Z',
       source: 'openclaw',
       status: 'active',
       lifecycle_state: 'active',
       strength: 0.2,
-      stability: 30,
-      last_access_ts: '2026-02-20T00:00:00.000Z',
+      stability: 10,
+      last_access_ts: '2026-02-01T00:00:00.000Z',
       next_review_ts: '2026-03-20T00:00:00.000Z',
       access_count: 0,
       inhibition_weight: 0,
@@ -235,6 +235,61 @@ test('lifecycle worker quarantines stale session memories aggressively', async (
     const rows = await auditStore.readAll();
     const latest = rows.at(-1)!;
     assert.equal(latest.lifecycle_state, 'quarantined');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('lifecycle worker does not auto-isolate weak stale user-explicit memories', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lifecycle-worker-user-explicit-'));
+  try {
+    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
+    const adapter = new InMemoryMemoryAdapter();
+    const worker = new MemoryLifecycleWorker({
+      auditStore,
+      adapter,
+      intervalMs: 60_000,
+      batchSize: 10,
+    });
+
+    await auditStore.append({
+      memory_uid: 'user-explicit-stale',
+      user_id: 'user-1',
+      run_id: null,
+      scope: 'long-term',
+      text: 'User explicitly said they like sparkling water.',
+      categories: ['preference'],
+      tags: [],
+      memory_type: 'preference',
+      domains: ['food'],
+      source_kind: 'user_explicit',
+      confidence: 0.9,
+      ts_event: '2026-01-01T00:00:00.000Z',
+      source: 'openclaw',
+      status: 'active',
+      lifecycle_state: 'active',
+      strength: 0.2,
+      stability: 10,
+      last_access_ts: '2026-01-01T00:00:00.000Z',
+      next_review_ts: '2026-01-15T00:00:00.000Z',
+      access_count: 0,
+      inhibition_weight: 0,
+      inhibition_until: '',
+      utility_score: 0.1,
+      risk_score: 0.2,
+      retention_deadline: '2026-12-31T00:00:00.000Z',
+      sensitivity: 'internal',
+      openclaw_refs: {},
+      mem0: {},
+    });
+
+    const result = await worker.runOnce('2026-03-13T00:00:00.000Z');
+    assert.equal(result.inhibited, 0);
+    assert.equal(result.quarantined, 0);
+
+    const rows = await auditStore.readAll();
+    const latest = rows.at(-1)!;
+    assert.equal(latest.lifecycle_state, 'active');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

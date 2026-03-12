@@ -5,6 +5,7 @@ import { PluginDebugLogger } from '../../src/debug/logger';
 import { buildAutoRecallBlock, runAutoRecall } from '../../src/recall/auto';
 import { buildRecallQueryVariants, type RecallQueryVariant } from '../../src/recall/query-rewrite';
 import type { RecallReranker } from '../../src/recall/reranker';
+import { deriveRecallSizing } from '../../src/recall/sizing';
 import type { AutoRecallConfig, MemoryRecord } from '../../src/types';
 
 function buildMemory(
@@ -115,7 +116,7 @@ test('runAutoRecall applies topK and maxChars constraints', async () => {
   assert.equal(result.candidateMemories.length, 2);
 });
 
-test('runAutoRecall fetches a wider candidate pool than the final injected topK', async () => {
+test('runAutoRecall uses the shared candidate pool sizing policy', async () => {
   let requestedTopK = 0;
 
   await runAutoRecall({
@@ -131,7 +132,7 @@ test('runAutoRecall fetches a wider candidate pool than the final injected topK'
     },
   });
 
-  assert.ok(requestedTopK > 2);
+  assert.equal(requestedTopK, 12);
 });
 
 test('buildRecallQueryVariants extracts a focused retrieval query from longer prompts', () => {
@@ -151,6 +152,14 @@ test('buildRecallQueryVariants strips host metadata wrappers before compression'
 
   assert.ok(variants.every((variant: RecallQueryVariant) => !/Sender \(untrusted metadata\)/i.test(variant.text)));
   assert.ok(variants.some((variant: RecallQueryVariant) => /What foods do I like at McDonalds\?/i.test(variant.text)));
+});
+
+test('buildRecallQueryVariants stays within the shared variant cap', () => {
+  const variants = buildRecallQueryVariants(
+    'Based on earlier notes and recent auto-capture results, can you tell me what I like to eat at McDonalds? Keep it short.',
+  );
+
+  assert.ok(variants.length <= deriveRecallSizing(1).maxQueryVariants);
 });
 
 test('runAutoRecall merges multi-query candidates so compressed queries can rescue relevant memories', async () => {

@@ -8,6 +8,8 @@ import { MemoryStoreTool } from '../../src/tools/store';
 import { HotMemorySearch } from '../../src/hot/search';
 import { openMemoryTable } from '../../src/db/table';
 import * as embedder from '../../src/hot/embedder';
+import * as tableDiscovery from '../../src/hot/table-discovery';
+import * as dbTable from '../../src/db/table';
 
 test('hot plane search returns canonical memory rows with filters', { concurrency: false }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'hot-search-'));
@@ -147,6 +149,64 @@ test('hot plane exact token query ranks exact substring hit first', { concurrenc
     assert.match(result.memories[0]?.text || '', /mem0-local-e2e-20260308-1156-ZP4M/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('hot plane search uses shared primary and secondary fetch sizing', async () => {
+  const cfg = {
+    lancedbPath: '/tmp/unused',
+    mem0BaseUrl: '',
+    mem0ApiKey: '',
+    outboxDbPath: '/tmp/outbox.json',
+    auditStorePath: '/tmp/audit.jsonl',
+    autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
+    autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
+    embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+  };
+  const hot = new HotMemorySearch(cfg);
+  const seenFtsTopK: number[] = [];
+  const seenVectorTopK: number[] = [];
+  const tableDiscoveryAny = tableDiscovery as any;
+  const dbTableAny = dbTable as any;
+  const originalDiscoverMemoryTables = tableDiscovery.discoverMemoryTables;
+  const originalOpenMemoryTable = dbTable.openMemoryTable;
+  const hotAny = hot as any;
+  const originalSearchFts = hotAny.searchFts;
+  const originalSearchVector = hotAny.searchVector;
+  const originalToMemoryRecord = hotAny.toMemoryRecord;
+
+  tableDiscoveryAny.discoverMemoryTables = async () => [
+    { dimension: 16, name: 'memory_records' },
+    { dimension: 32, name: 'memory_records_d32' },
+  ];
+  dbTableAny.openMemoryTable = async () => ({}) as any;
+  hotAny.searchFts = async (_tbl: unknown, _query: string, _where: string, topK: number) => {
+    seenFtsTopK.push(topK);
+    return [];
+  };
+  hotAny.searchVector = async (_tbl: unknown, _vector: number[] | null, _where: string, topK: number) => {
+    seenVectorTopK.push(topK);
+    return [];
+  };
+  hotAny.toMemoryRecord = (row: any) => row;
+
+  try {
+    const result = await hot.search({
+      query: 'English',
+      userId: 'default',
+      topK: 5,
+      filters: { scope: 'long-term' },
+    });
+
+    assert.deepEqual(result.memories, []);
+    assert.deepEqual(seenVectorTopK, [72]);
+    assert.deepEqual(seenFtsTopK, [72, 48]);
+  } finally {
+    tableDiscoveryAny.discoverMemoryTables = originalDiscoverMemoryTables;
+    dbTableAny.openMemoryTable = originalOpenMemoryTable;
+    hotAny.searchFts = originalSearchFts;
+    hotAny.searchVector = originalSearchVector;
+    hotAny.toMemoryRecord = originalToMemoryRecord;
   }
 });
 
@@ -518,6 +578,58 @@ test('hot plane ranking prefers concise preference memories over long summaries'
   );
 
   assert.equal(ranked[0]?.memory_uid, 'concise-preference');
+});
+
+test('hot plane ranking fades stale weak memories behind fresher stronger peers', { concurrency: false }, () => {
+  const cfg = {
+    lancedbPath: '',
+    mem0BaseUrl: '',
+    mem0ApiKey: '',
+    outboxDbPath: '',
+    auditStorePath: '',
+    autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
+    autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
+    embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+  };
+  const hot = new HotMemorySearch(cfg as any);
+
+  const ranked = (hot as any).applyRankingAdjustments(
+    [
+      {
+        memory_uid: 'stale-low',
+        text: 'User likes grilled chicken burgers.',
+        categories: ['preference', 'food'],
+        memory_type: 'preference',
+        source_kind: 'assistant_inferred',
+        confidence: 0.5,
+        ts_event: '2026-01-01T00:00:00.000Z',
+        last_access_ts: '2026-01-01T00:00:00.000Z',
+        stability: 10,
+        strength: 0.25,
+        utility_score: 0.2,
+        lifecycle_state: 'active',
+        __rrf_score: 0.9,
+      },
+      {
+        memory_uid: 'fresh-strong',
+        text: 'User likes grilled chicken burgers.',
+        categories: ['preference', 'food'],
+        memory_type: 'preference',
+        source_kind: 'user_explicit',
+        confidence: 0.95,
+        ts_event: '2026-03-12T00:00:00.000Z',
+        last_access_ts: '2026-03-12T00:00:00.000Z',
+        stability: 30,
+        strength: 0.8,
+        utility_score: 0.8,
+        lifecycle_state: 'active',
+        __rrf_score: 0.8,
+      },
+    ],
+    'What kind of grilled chicken burgers do I like?',
+  );
+
+  assert.equal(ranked[0]?.memory_uid, 'fresh-strong');
 });
 
 test('hot plane lifecycle filtering excludes quarantined and expired memories', { concurrency: false }, async () => {

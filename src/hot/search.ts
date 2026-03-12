@@ -5,6 +5,7 @@ import { getMemoryTableName } from '../db/schema';
 import { buildMemoryDedupKeys } from '../memory/dedup';
 import { backfillLifecycleFields, isRecallEligibleLifecycleState } from '../memory/lifecycle';
 import { classifyQueryDomain, classifyQueryIntent, inferMemoryAnnotations, looksLikeCredentialQuery } from '../memory/typing';
+import { deriveRecallSizing } from '../recall/sizing';
 import type { MemoryDomain, MemoryRecord, PluginConfig, SearchParams, SearchResult } from '../types';
 
 const RRF_K = 60;
@@ -39,6 +40,7 @@ export class HotMemorySearch {
 
   async search(params: SearchParams): Promise<SearchResult> {
     const { query, userId = 'default', sessionId, topK = 5, filters } = params;
+    const sizing = deriveRecallSizing(topK);
     const currentDim = this.config.embedding?.dimension || 16;
     const whereClause = this.buildWhereClause(userId, filters, sessionId);
     let queryVector: number[] | null | undefined;
@@ -53,7 +55,7 @@ export class HotMemorySearch {
       
       // 当前维度的表：使用向量+FTS混合搜索
       if (dimension === currentDim) {
-        const fetchK = Math.max(topK * 6, 24);
+        const fetchK = sizing.primaryFetchK;
         const ftsRows = await this.searchFts(tbl, query, whereClause, fetchK);
         queryVector = queryVector === undefined ? await this.getQueryVector(query) : queryVector;
         const vectorRows = await this.searchVector(tbl, queryVector, whereClause, fetchK);
@@ -61,7 +63,7 @@ export class HotMemorySearch {
         allRows.push(...merged.map(r => ({ ...r, _sourceDim: dimension })));
       } else {
         // 其他维度的表：仅使用FTS文本搜索（向量维度不匹配）
-        const fetchK = Math.max(topK * 4, 16);
+        const fetchK = sizing.secondaryFetchK;
         const ftsRows = await this.searchFts(tbl, query, whereClause, fetchK);
         // 为FTS结果赋予基础分数
         const scoredFtsRows = ftsRows.map((r, idx) => ({
