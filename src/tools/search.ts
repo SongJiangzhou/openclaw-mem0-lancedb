@@ -24,9 +24,10 @@ export class MemorySearchTool {
       agentId: params.agentId,
     });
     const intent = classifyQueryIntent(query);
+    let localResult: SearchResult | null = null;
 
     try {
-      const result = await this.hotSearch.search({
+      localResult = await this.hotSearch.search({
         query,
         userId: identity.userId,
         sessionId: identity.sessionId,
@@ -34,14 +35,43 @@ export class MemorySearchTool {
         topK,
         filters,
       });
-      if (result.memories.length >= topK || !hasMem0Auth(this.config)) {
-        return result;
-      }
-
-      const remote = await this.searchMem0Enhanced(query, identity.userId, topK, filters, intent);
-      return this.mergeLocalAndRemote(result, remote, topK);
     } catch (err) {
-      console.warn('[memorySearch] LanceDB failed, trying Mem0 fallback:', err);
+      this.logStructuredException('memory_search.local_failed', {
+        query,
+        topK,
+        localCount: 0,
+        mem0Mode: this.config.mem0Mode,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof Error && err.cause ? String(err.cause) : undefined,
+      });
+    }
+
+    if (localResult && (localResult.memories.length >= topK || !hasMem0Auth(this.config))) {
+      return localResult;
+    }
+
+    if (localResult) {
+      try {
+        const remote = await this.searchMem0Enhanced(query, identity.userId, topK, filters, intent);
+        return this.mergeLocalAndRemote(localResult, remote, topK);
+      } catch (err) {
+        this.logStructuredException('memory_search.mem0_fallback_failed', {
+          query,
+          topK,
+          localCount: localResult.memories.length,
+          mem0Mode: this.config.mem0Mode,
+          message: err instanceof Error ? err.message : String(err),
+          cause: err instanceof Error && err.cause ? String(err.cause) : undefined,
+        });
+        console.warn(JSON.stringify({
+          event: 'memory_search.returning_local_after_fallback_failure',
+          query,
+          topK,
+          localCount: localResult.memories.length,
+          mem0Mode: this.config.mem0Mode,
+        }));
+        return localResult;
+      }
     }
 
     if (!hasMem0Auth(this.config)) {
@@ -51,9 +81,20 @@ export class MemorySearchTool {
     try {
       return await this.searchMem0Enhanced(query, identity.userId, topK, filters, intent);
     } catch (err) {
-      console.error('[memorySearch] Mem0 also failed:', err);
+      this.logStructuredException('memory_search.mem0_fallback_failed', {
+        query,
+        topK,
+        localCount: 0,
+        mem0Mode: this.config.mem0Mode,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof Error && err.cause ? String(err.cause) : undefined,
+      });
       return { memories: [], source: 'none' };
     }
+  }
+
+  private logStructuredException(event: string, fields: Record<string, unknown>): void {
+    console.error(JSON.stringify({ event, fields }));
   }
 
   private async searchMem0Enhanced(
