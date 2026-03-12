@@ -74,14 +74,14 @@ export class EmbeddingMigrationWorker {
     this.timer = null;
   }
 
-  async runOnce(): Promise<void> {
+  async runOnce(): Promise<MigrationBatchResult> {
     if (this.running || !this.getMigrationConfig().enabled) {
-      return;
+      return { migrated: 0, failed: 0, legacyTables: 0, retryableFailures: 0 };
     }
 
     this.running = true;
     try {
-      await this.migrateBatch();
+      return await this.migrateBatch();
     } finally {
       this.running = false;
     }

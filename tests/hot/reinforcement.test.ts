@@ -4,9 +4,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { FileAuditStore } from '../../src/audit/store';
 import { InMemoryMemoryAdapter, type MemoryAdapterRecord } from '../../src/bridge/adapter';
 import { reinforceRecalledMemories } from '../../src/hot/reinforcement';
+import { recordToPayload } from '../../src/memory/mapper';
+import type { MemoryRecord } from '../../src/types';
 
 class TrackingMemoryAdapter extends InMemoryMemoryAdapter {
   metadataUpdates = 0;
@@ -23,13 +24,12 @@ class TrackingMemoryAdapter extends InMemoryMemoryAdapter {
   }
 }
 
-test('reinforceRecalledMemories upgrades recalled memories in audit and adapter', async () => {
+test('reinforceRecalledMemories upgrades recalled memories in the adapter-backed store', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'reinforcement-'));
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
     const adapter = new TrackingMemoryAdapter();
 
-    await auditStore.append({
+    const seeded: MemoryRecord = {
       memory_uid: 'recall-1',
       user_id: 'user-1',
       run_id: null,
@@ -58,10 +58,10 @@ test('reinforceRecalledMemories upgrades recalled memories in audit and adapter'
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    };
+    await adapter.upsertMemory({ memory_uid: seeded.memory_uid, memory: recordToPayload(seeded) });
 
     const updated = await reinforceRecalledMemories({
-      auditStore,
       adapter,
       memories: [{
         memory_uid: 'recall-1',
@@ -83,14 +83,13 @@ test('reinforceRecalledMemories upgrades recalled memories in audit and adapter'
     });
 
     assert.equal(updated, 1);
-    const rows = await auditStore.readAll();
-    const latest = rows.at(-1)!;
-    assert.equal(latest.lifecycle_state, 'reinforced');
-    assert.equal((latest.access_count || 0) > 0, true);
-    assert.equal((latest.stability || 0) > 30, true);
-    assert.equal((latest.utility_score || 0) > 0.5, true);
+    const latest = await adapter.getMemory('recall-1');
+    assert.equal(latest?.lifecycle_state, 'reinforced');
+    assert.equal((latest?.access_count || 0) > 0, true);
+    assert.equal((latest?.stability || 0) > 30, true);
+    assert.equal((latest?.utility_score || 0) > 0.5, true);
     assert.equal(adapter.metadataUpdates, 1);
-    assert.equal(adapter.upserts, 0);
+    assert.equal(adapter.upserts, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { FileAuditStore } from '../../src/audit/store';
+import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
 import { Mem0Poller } from '../../src/bridge/poller';
 import type { PluginConfig } from '../../src/types';
 
@@ -27,7 +27,7 @@ test('Mem0Poller starts and stops without error', () => {
   assert.ok(true);
 });
 
-test('Mem0Poller appends fetched memories into audit store', async () => {
+test('Mem0Poller syncs fetched memories into the adapter-backed store', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'poller-audit-'));
   const cfg: PluginConfig = {
     lancedbPath: join(dir, 'lancedb'),
@@ -42,7 +42,7 @@ test('Mem0Poller appends fetched memories into audit store', async () => {
   };
 
   const originalFetch = globalThis.fetch;
-  const auditStore = new FileAuditStore(cfg.auditStorePath);
+  const adapter = new InMemoryMemoryAdapter();
   globalThis.fetch = (async () => new Response(JSON.stringify({
     results: [
       {
@@ -61,13 +61,13 @@ test('Mem0Poller appends fetched memories into audit store', async () => {
   }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as any;
 
   try {
-    const poller = new Mem0Poller(cfg, undefined, auditStore);
+    const poller = new Mem0Poller(cfg, undefined, undefined, adapter);
     await poller.poll();
-    const rows = await auditStore.readAll();
+    const rows = await adapter.listMemories({ userId: 'default' });
 
     assert.equal(rows.length, 1);
-    assert.equal(rows[0]?.text, 'User prefers sparkling water over soda.');
-    assert.equal(rows[0]?.user_id, 'default');
+    assert.equal(rows[0]?.memory.text, 'User prefers sparkling water over soda.');
+    assert.equal(rows[0]?.memory.user_id, 'default');
   } finally {
     globalThis.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });

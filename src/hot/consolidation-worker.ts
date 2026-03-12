@@ -1,19 +1,17 @@
-import { FileAuditStore } from '../audit/store';
 import type { MemoryAdapter } from '../bridge/adapter';
 import { buildMemoryDedupKeys } from '../memory/dedup';
 import { backfillLifecycleFields } from '../memory/lifecycle';
+import { recordToPayload } from '../memory/mapper';
 import type { MemoryRecord, MemorySyncPayload } from '../types';
 import type { PluginDebugLogger } from '../debug/logger';
 
 type ConsolidationWorkerDeps = {
-  auditStore: FileAuditStore;
   adapter: MemoryAdapter;
   intervalMs: number;
   batchSize: number;
 };
 
 export class MemoryConsolidationWorker {
-  private readonly auditStore: FileAuditStore;
   private readonly adapter: MemoryAdapter;
   private readonly intervalMs: number;
   private readonly batchSize: number;
@@ -21,7 +19,6 @@ export class MemoryConsolidationWorker {
   private timer: NodeJS.Timeout | null = null;
 
   constructor(deps: ConsolidationWorkerDeps, debug?: PluginDebugLogger) {
-    this.auditStore = deps.auditStore;
     this.adapter = deps.adapter;
     this.intervalMs = deps.intervalMs;
     this.batchSize = deps.batchSize;
@@ -48,8 +45,8 @@ export class MemoryConsolidationWorker {
   }
 
   async runOnce(): Promise<{ scanned: number; superseded: number }> {
-    const activeRows = (await this.auditStore.readLatestRows())
-      .map((row) => backfillLifecycleFields(row))
+    const activeRows = (await this.adapter.listMemories({ status: 'active', scope: 'long-term' }))
+      .map((row) => backfillLifecycleFields({ memory_uid: row.memory_uid, ...toRecord(row.memory) }))
       .filter((row) => row.status === 'active' && row.scope === 'long-term');
     const aliasToCanonical = new Map<string, string>();
     const canonicalRows = new Map<string, MemoryRecord>();
@@ -82,10 +79,9 @@ export class MemoryConsolidationWorker {
       }
       seen.add(item.duplicate.memory_uid);
       const updated = supersedeRecord(item.duplicate);
-      await this.auditStore.append(updated);
       await this.adapter.updateMemoryMetadata({
         memory_uid: updated.memory_uid,
-        memory: toPayload(updated),
+        memory: recordToPayload(updated),
       });
       superseded += 1;
       this.debug?.verbose('memory_consolidation.superseded', {
@@ -135,25 +131,36 @@ function supersedeRecord(record: MemoryRecord): MemoryRecord {
   });
 }
 
-function toPayload(record: MemoryRecord): MemorySyncPayload {
-  return backfillLifecycleFields({
-    user_id: record.user_id,
-    session_id: record.session_id || '',
-    agent_id: record.agent_id || '',
-    run_id: record.run_id || null,
-    scope: record.scope,
-    text: record.text,
-    categories: record.categories || [],
-    tags: record.tags || [],
-    memory_type: record.memory_type || 'generic',
-    domains: record.domains || ['generic'],
-    source_kind: record.source_kind || 'assistant_inferred',
-    confidence: typeof record.confidence === 'number' ? record.confidence : 0.7,
-    ts_event: record.ts_event,
-    source: record.source,
-    status: record.status,
-    sensitivity: record.sensitivity || 'internal',
-    openclaw_refs: record.openclaw_refs || {},
-    mem0: record.mem0 || {},
-  });
+function toRecord(memory: MemorySyncPayload): Omit<MemoryRecord, 'memory_uid'> {
+  return {
+    user_id: memory.user_id,
+    session_id: memory.session_id || '',
+    agent_id: memory.agent_id || '',
+    run_id: memory.run_id || null,
+    scope: memory.scope,
+    text: memory.text,
+    categories: memory.categories || [],
+    tags: memory.tags || [],
+    memory_type: memory.memory_type || 'generic',
+    domains: memory.domains || ['generic'],
+    source_kind: memory.source_kind || 'assistant_inferred',
+    confidence: typeof memory.confidence === 'number' ? memory.confidence : 0.7,
+    ts_event: memory.ts_event,
+    source: memory.source,
+    status: memory.status,
+    lifecycle_state: memory.lifecycle_state,
+    strength: memory.strength,
+    stability: memory.stability,
+    last_access_ts: memory.last_access_ts,
+    next_review_ts: memory.next_review_ts,
+    access_count: memory.access_count,
+    inhibition_weight: memory.inhibition_weight,
+    inhibition_until: memory.inhibition_until,
+    utility_score: memory.utility_score,
+    risk_score: memory.risk_score,
+    retention_deadline: memory.retention_deadline,
+    sensitivity: memory.sensitivity || 'internal',
+    openclaw_refs: memory.openclaw_refs || {},
+    mem0: memory.mem0 || {},
+  };
 }

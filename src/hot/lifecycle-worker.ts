@@ -1,4 +1,3 @@
-import { FileAuditStore } from '../audit/store';
 import type { MemoryAdapter } from '../bridge/adapter';
 import {
   backfillLifecycleFields,
@@ -17,14 +16,12 @@ import type { MemoryRecord, MemorySyncPayload } from '../types';
 import type { PluginDebugLogger } from '../debug/logger';
 
 type LifecycleWorkerDeps = {
-  auditStore: FileAuditStore;
   adapter: MemoryAdapter;
   intervalMs: number;
   batchSize: number;
 };
 
 export class MemoryLifecycleWorker {
-  private readonly auditStore: FileAuditStore;
   private readonly adapter: MemoryAdapter;
   private readonly intervalMs: number;
   private readonly batchSize: number;
@@ -32,7 +29,6 @@ export class MemoryLifecycleWorker {
   private timer: NodeJS.Timeout | null = null;
 
   constructor(deps: LifecycleWorkerDeps, debug?: PluginDebugLogger) {
-    this.auditStore = deps.auditStore;
     this.adapter = deps.adapter;
     this.intervalMs = deps.intervalMs;
     this.batchSize = deps.batchSize;
@@ -57,7 +53,7 @@ export class MemoryLifecycleWorker {
   }
 
   async runOnce(nowIso: string = new Date().toISOString()): Promise<LifecycleRunResult> {
-    const latestRows = await readLatestRows(this.auditStore);
+    const latestRows = await readLatestRows(this.adapter);
     let reviewed = 0;
     let inhibited = 0;
     let quarantined = 0;
@@ -99,7 +95,6 @@ export class MemoryLifecycleWorker {
         continue;
       }
 
-      await this.auditStore.append(updated);
       await this.adapter.updateMemoryMetadata({
         memory_uid: updated.memory_uid,
         memory: toPayload(updated),
@@ -132,8 +127,46 @@ type LifecycleRunResult = {
   restored: number;
 };
 
-async function readLatestRows(auditStore: FileAuditStore): Promise<MemoryRecord[]> {
-  return auditStore.readLatestRows();
+async function readLatestRows(adapter: MemoryAdapter): Promise<MemoryRecord[]> {
+  const rows = await adapter.listMemories();
+  return rows.map((row) => backfillLifecycleFields({
+    memory_uid: row.memory_uid,
+    ...toPayloadRecord(row.memory),
+  }));
+}
+
+function toPayloadRecord(memory: MemorySyncPayload): Omit<MemoryRecord, 'memory_uid'> {
+  return {
+    user_id: memory.user_id,
+    session_id: memory.session_id || '',
+    agent_id: memory.agent_id || '',
+    run_id: memory.run_id || null,
+    scope: memory.scope,
+    text: memory.text,
+    categories: memory.categories || [],
+    tags: memory.tags || [],
+    memory_type: memory.memory_type || 'generic',
+    domains: memory.domains || ['generic'],
+    source_kind: memory.source_kind || 'assistant_inferred',
+    confidence: typeof memory.confidence === 'number' ? memory.confidence : 0.7,
+    ts_event: memory.ts_event,
+    source: memory.source,
+    status: memory.status,
+    lifecycle_state: memory.lifecycle_state,
+    strength: memory.strength,
+    stability: memory.stability,
+    last_access_ts: memory.last_access_ts,
+    next_review_ts: memory.next_review_ts,
+    access_count: memory.access_count,
+    inhibition_weight: memory.inhibition_weight,
+    inhibition_until: memory.inhibition_until,
+    utility_score: memory.utility_score,
+    risk_score: memory.risk_score,
+    retention_deadline: memory.retention_deadline,
+    sensitivity: memory.sensitivity || 'internal',
+    openclaw_refs: memory.openclaw_refs || {},
+    mem0: memory.mem0 || {},
+  };
 }
 
 function toPayload(record: MemoryRecord): MemorySyncPayload {

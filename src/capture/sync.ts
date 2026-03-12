@@ -20,7 +20,7 @@ export async function syncCapturedMemories(params: {
   runId?: string | null;
   scope: 'long-term' | 'session';
   eventId: string | null;
-  auditStore: FileAuditStore;
+  auditStore?: FileAuditStore;
   adapter: MemoryAdapter;
   tsEvent?: string;
   debug?: PluginDebugLogger;
@@ -30,9 +30,9 @@ export async function syncCapturedMemories(params: {
   };
 }): Promise<{ synced: number; memoryUids: string[] }> {
   const tsEvent = params.tsEvent || new Date().toISOString();
-  const existingRows = await params.auditStore.readAll();
+  const existingRows = await params.adapter.listMemories({ userId: params.userId });
   const existingUids = new Set(existingRows.map((record) => record.memory_uid));
-  const existingDedupKeys = new Set(existingRows.flatMap((record) => buildMemoryDedupKeys({ text: record.text, mem0: record.mem0 })));
+  const existingDedupKeys = new Set(existingRows.flatMap((record) => buildMemoryDedupKeys({ text: record.memory.text, mem0: record.memory.mem0 })));
   const memoryUids: string[] = [];
   let synced = 0;
   params.debug?.basic('capture_sync.start', { eventId: params.eventId, count: params.memories.length, scope: params.scope });
@@ -79,7 +79,9 @@ export async function syncCapturedMemories(params: {
     }
 
     const record = payloadToRecord(memoryUid, memoryPayload);
-    await params.auditStore.append(record);
+    if (params.auditStore) {
+      await params.auditStore.append(record);
+    }
     await params.adapter.upsertMemory({
       memory_uid: memoryUid,
       memory: memoryPayload,

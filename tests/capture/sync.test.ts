@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { FileAuditStore } from '../../src/audit/store';
 import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
 import type { Mem0ExtractedMemory } from '../../src/control/mem0';
 import { PluginDebugLogger } from '../../src/debug/logger';
@@ -20,11 +19,10 @@ function createExtractedMemory(overrides?: Partial<Mem0ExtractedMemory>): Mem0Ex
   };
 }
 
-test('capture sync maps extracted memories into local audit store and hot plane', async () => {
+test('capture sync maps extracted memories into the adapter-backed store', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'capture-sync-'));
 
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
 
     const result = await syncCapturedMemories({
@@ -33,7 +31,6 @@ test('capture sync maps extracted memories into local audit store and hot plane'
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:00:00.000Z',
     });
@@ -41,17 +38,13 @@ test('capture sync maps extracted memories into local audit store and hot plane'
     assert.equal(result.synced, 1);
     assert.equal(result.memoryUids.length, 1);
 
-    const records = await auditStore.readAll();
-    assert.equal(records.length, 1);
-    assert.equal(records[0]?.text, 'User prefers replies in English');
-    assert.equal(records[0]?.mem0?.mem0_id, 'mem0-captured-1');
-    assert.equal(records[0]?.mem0?.event_id, 'evt-capture');
-    assert.equal(records[0]?.openclaw_refs?.file_path, 'AUTO_CAPTURE');
-    assert.equal(records[0]?.memory_type, 'preference');
-    assert.equal(records[0]?.source_kind, 'assistant_inferred');
-
-    const exists = await adapter.exists(result.memoryUids[0]!);
-    assert.equal(exists, true);
+    const stored = await adapter.getMemory(result.memoryUids[0]!);
+    assert.equal(stored?.text, 'User prefers replies in English');
+    assert.equal(stored?.mem0?.mem0_id, 'mem0-captured-1');
+    assert.equal(stored?.mem0?.event_id, 'evt-capture');
+    assert.equal(stored?.openclaw_refs?.file_path, 'AUTO_CAPTURE');
+    assert.equal(stored?.memory_type, 'preference');
+    assert.equal(stored?.source_kind, 'assistant_inferred');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -61,7 +54,6 @@ test('capture sync skips duplicate extracted memories by memory uid', async () =
   const dir = mkdtempSync(join(tmpdir(), 'capture-sync-'));
 
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
 
     const first = await syncCapturedMemories({
@@ -70,7 +62,6 @@ test('capture sync skips duplicate extracted memories by memory uid', async () =
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:00:00.000Z',
     });
@@ -80,16 +71,13 @@ test('capture sync skips duplicate extracted memories by memory uid', async () =
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:00:00.000Z',
     });
 
-    const records = await auditStore.readAll();
-
     assert.equal(first.synced, 1);
     assert.equal(second.synced, 0);
-    assert.equal(records.length, 1);
+    assert.equal((await adapter.listMemories({ userId: 'user-1' })).length, 1);
     assert.deepEqual(first.memoryUids, second.memoryUids);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -105,7 +93,6 @@ test('capture sync emits debug events for synced and duplicate memories', async 
       { mode: 'debug' },
       { info: (msg: string) => messages.push(msg), warn: (msg: string) => messages.push(msg), error: (msg: string) => messages.push(msg) },
     );
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
 
     await syncCapturedMemories({
@@ -114,7 +101,6 @@ test('capture sync emits debug events for synced and duplicate memories', async 
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:00:00.000Z',
       debug,
@@ -125,7 +111,6 @@ test('capture sync emits debug events for synced and duplicate memories', async 
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:00:00.000Z',
       debug,
@@ -145,7 +130,6 @@ test('capture sync skips semantic duplicates that share mem0 hash with a differe
   const dir = mkdtempSync(join(tmpdir(), 'capture-sync-'));
 
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
 
     const first = await syncCapturedMemories({
@@ -154,7 +138,6 @@ test('capture sync skips semantic duplicates that share mem0 hash with a differe
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture-1',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:00:00.000Z',
     });
@@ -164,16 +147,13 @@ test('capture sync skips semantic duplicates that share mem0 hash with a differe
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture-2',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:05:00.000Z',
     });
 
-    const records = await auditStore.readAll();
-
     assert.equal(first.synced, 1);
     assert.equal(second.synced, 0);
-    assert.equal(records.length, 1);
+    assert.equal((await adapter.listMemories({ userId: 'user-1' })).length, 1);
     assert.equal(await adapter.exists(first.memoryUids[0]!), true);
     assert.equal(await adapter.exists(second.memoryUids[0]!), false);
   } finally {
@@ -185,7 +165,6 @@ test('capture sync rejects query-echo memories that only restate the latest user
   const dir = mkdtempSync(join(tmpdir(), 'capture-sync-'));
 
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
 
     const result = await syncCapturedMemories({
@@ -194,7 +173,6 @@ test('capture sync rejects query-echo memories that only restate the latest user
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture-echo',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:00:00.000Z',
       captureContext: {
@@ -203,9 +181,8 @@ test('capture sync rejects query-echo memories that only restate the latest user
       },
     });
 
-    const records = await auditStore.readAll();
     assert.equal(result.synced, 0);
-    assert.equal(records.length, 0);
+    assert.equal((await adapter.listMemories({ userId: 'user-1' })).length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -215,7 +192,6 @@ test('capture sync rejects preference memories supported only by assistant outpu
   const dir = mkdtempSync(join(tmpdir(), 'capture-sync-'));
 
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
 
     const result = await syncCapturedMemories({
@@ -224,7 +200,6 @@ test('capture sync rejects preference memories supported only by assistant outpu
       runId: 'run-1',
       scope: 'long-term',
       eventId: 'evt-capture-assistant-only',
-      auditStore,
       adapter,
       tsEvent: '2026-03-07T12:00:00.000Z',
       captureContext: {
@@ -233,9 +208,8 @@ test('capture sync rejects preference memories supported only by assistant outpu
       },
     });
 
-    const records = await auditStore.readAll();
     assert.equal(result.synced, 0);
-    assert.equal(records.length, 0);
+    assert.equal((await adapter.listMemories({ userId: 'user-1' })).length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
