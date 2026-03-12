@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
@@ -152,7 +152,7 @@ serialTest('buildDefaultPluginConfig preserves an existing remote mem0 api key',
   assert.equal(config.outboxDbPath, join(memoryRoot, 'outbox.json'));
   assert.equal(config.auditStorePath, join(memoryRoot, 'audit', 'memory_records.jsonl'));
   assert.equal(config.autoRecall.topK, 5);
-  assert.equal(config.autoRecall.maxChars, 800);
+  assert.equal(config.autoRecall.maxChars, 1400);
   assert.equal(config.autoRecall.scope, 'all');
   assert.equal(config.autoRecall.reranker.provider, 'voyage');
   assert.equal(config.autoRecall.reranker.baseUrl, 'https://custom.voyage.test/v1');
@@ -170,10 +170,10 @@ serialTest('buildDefaultPluginConfig preserves an existing debug mode override',
   });
 
   assert.equal(config.debug.mode, 'debug');
-  assert.equal(config.debug.logDir, join(homedir(), '.openclaw', 'workspace', 'logs', 'openclaw-mem0-lancedb'));
+  assert.equal('logDir' in config.debug, false);
 });
 
-serialTest('buildDefaultPluginConfig preserves an existing debug logDir override', async () => {
+serialTest('buildDefaultPluginConfig ignores a legacy debug logDir override', async () => {
   const installer = await import(INSTALLER_PATH);
   const config = installer.buildDefaultPluginConfig({
     debug: {
@@ -183,7 +183,7 @@ serialTest('buildDefaultPluginConfig preserves an existing debug logDir override
   });
 
   assert.equal(config.debug.mode, 'debug');
-  assert.equal(config.debug.logDir, '/tmp/openclaw-debug');
+  assert.equal('logDir' in config.debug, false);
 });
 
 serialTest('buildDefaultPluginConfig preserves an existing reranker api key even when provider is not voyage', async () => {
@@ -205,6 +205,22 @@ serialTest('buildDefaultPluginConfig preserves an existing reranker api key even
 
   assert.equal(config.autoRecall.reranker.provider, 'local');
   assert.equal(config.autoRecall.reranker.apiKey, 'existing-rerank-key');
+});
+
+serialTest('buildDefaultPluginConfig always uses fixed auto recall defaults', async () => {
+  const installer = await import(INSTALLER_PATH);
+  const config = installer.buildDefaultPluginConfig({
+    autoRecall: {
+      enabled: true,
+      topK: 99,
+      maxChars: 42,
+      scope: 'long-term',
+    },
+  });
+
+  assert.equal(config.autoRecall.topK, 5);
+  assert.equal(config.autoRecall.maxChars, 1400);
+  assert.equal(config.autoRecall.scope, 'all');
 });
 
 serialTest('buildDefaultPluginConfig defaults mem0 to disabled when auto capture is off and no mem0 mode exists', async () => {

@@ -12,7 +12,6 @@ const PLUGIN_NAME = 'openclaw-mem0-lancedb';
 const ROOT_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const OPENCLAW_PLUGINS_DIR = path.join(os.homedir(), '.openclaw', 'extensions');
 const OPENCLAW_CONFIG = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-const DEFAULT_DEBUG_LOG_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'logs', PLUGIN_NAME);
 
 const STRINGS = {
   en: {
@@ -39,7 +38,6 @@ const STRINGS = {
     autoCaptureRequireReply: 'Require assistant reply before capture?',
     autoCaptureMaxChars: 'Max chars per captured message',
     debugMode: 'Debug mode',
-    debugLogDir: 'Debug log directory',
     applyConfig: 'Write this plugin config to openclaw.json?',
     done: 'Installation complete',
     choices: {
@@ -83,7 +81,6 @@ const STRINGS = {
     autoCaptureRequireReply: '是否要求必须在模型回复后才触发提取？',
     autoCaptureMaxChars: '提取单条消息的截断限制(字符)',
     debugMode: '调试模式',
-    debugLogDir: '调试日志目录',
     applyConfig: '将上述插件配置写入 openclaw.json 吗？',
     done: '安装完成',
     choices: {
@@ -238,15 +235,12 @@ export function buildDefaultPluginConfig(existingConfig = {}) {
     auditStorePath: path.join(memoryRoot, 'audit', 'memory_records.jsonl'),
     debug: {
       mode: existingDebug.mode || 'off',
-      ...((existingDebug.logDir || existingDebug.mode === 'debug')
-        ? { logDir: existingDebug.logDir || DEFAULT_DEBUG_LOG_DIR }
-        : {}),
     },
     autoRecall: {
       enabled: true,
-      topK: existingAutoRecall.topK || 5,
-      maxChars: existingAutoRecall.maxChars || 1400,
-      scope: existingAutoRecall.scope || 'all',
+      topK: 5,
+      maxChars: 1400,
+      scope: 'all',
       reranker: {
         provider: existingReranker.provider || 'local',
         baseUrl: existingReranker.baseUrl || 'https://api.voyageai.com/v1',
@@ -284,40 +278,14 @@ export async function promptForConfig(strings, existingConfig = {}) {
     initialValue: existingAutoRecall.enabled ?? true,
   });
   if (isCancel(autoRecallEnabled)) process.exit(1);
-  const currentTopK = String(existingAutoRecall.topK ?? 5);
-  const autoRecallTopK = autoRecallEnabled
-    ? await text({
-      message: withDefaultHint(strings.autoRecallTopK, '8', strings),
-      defaultValue: currentTopK,
-      placeholder: '8',
-    })
-    : currentTopK;
-  const resolvedAutoRecallTopK = autoRecallEnabled ? resolveNumericPromptValue(autoRecallTopK, currentTopK) : Number(currentTopK);
-  const currentMaxChars = String(existingAutoRecall.maxChars ?? 1400);
-  const autoRecallMaxChars = autoRecallEnabled
-    ? await text({
-      message: withDefaultHint(strings.autoRecallMaxChars, '1400', strings),
-      defaultValue: currentMaxChars,
-      placeholder: '1400',
-    })
-    : currentMaxChars;
-  const resolvedAutoRecallMaxChars = autoRecallEnabled ? resolveNumericPromptValue(autoRecallMaxChars, currentMaxChars) : Number(currentMaxChars);
-  let autoRecallScope = existingAutoRecall.scope || 'all';
+  const resolvedAutoRecallTopK = 5;
+  const resolvedAutoRecallMaxChars = 1400;
+  let autoRecallScope = 'all';
   let autoRecallRerankerProvider = existingReranker.provider || 'local';
   let autoRecallRerankerBaseUrl = existingReranker.baseUrl || 'https://api.voyageai.com/v1';
   let autoRecallRerankerApiKey = existingReranker.apiKey || '';
   let autoRecallRerankerModel = existingReranker.model || 'rerank-2.5-lite';
   if (autoRecallEnabled) {
-    autoRecallScope = await select({
-      message: withDefaultHint(strings.autoRecallScope, strings.choices.recallAll, strings),
-      options: [
-        { value: 'all', label: strings.choices.recallAll },
-        { value: 'long-term', label: strings.choices.recallLongTerm },
-      ],
-      initialValue: autoRecallScope,
-    });
-    if (isCancel(autoRecallScope)) process.exit(1);
-
     autoRecallRerankerProvider = await select({
       message: withDefaultHint(strings.autoRecallRerankerProvider, strings.choices.rerankerLocal, strings),
       options: [
@@ -482,7 +450,6 @@ export async function promptForConfig(strings, existingConfig = {}) {
     initialValue: existingDebug.mode || 'off',
   });
   if (isCancel(debugChoice)) process.exit(1);
-  const debugLogDir = existingDebug.logDir || (debugChoice === 'debug' ? DEFAULT_DEBUG_LOG_DIR : undefined);
 
   return {
     lancedbPath: path.join(memoryRoot, 'lancedb'),
@@ -501,7 +468,6 @@ export async function promptForConfig(strings, existingConfig = {}) {
     auditStorePath: path.join(memoryRoot, 'audit', 'memory_records.jsonl'),
     debug: {
       mode: debugChoice,
-      ...(debugLogDir ? { logDir: debugLogDir } : {}),
     },
     autoRecall: {
       enabled: autoRecallEnabled,
