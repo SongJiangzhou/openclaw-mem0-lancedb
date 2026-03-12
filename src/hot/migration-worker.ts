@@ -1,6 +1,6 @@
 import * as lancedb from '@lancedb/lancedb';
 import { clearDbCacheForPath, getTableSchemaFields, openMemoryTable, openMemoryTableByName, sanitizeRecordsForSchema } from '../db/table';
-import { existsSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import * as path from 'node:path';
 import type { PluginDebugLogger } from '../debug/logger';
 import { embedText } from './embedder';
@@ -38,22 +38,6 @@ type MigrationBatchResult = {
   failed: number;
   legacyTables: number;
   retryableFailures: number;
-};
-
-type MigrationStatusSnapshot = {
-  phase: 'running' | 'retry_backoff' | 'done' | 'idle';
-  ts: string;
-  currentDimension: number;
-  batchSize: number;
-  migrated: number;
-  failed: number;
-  legacyTables: number;
-  retryableFailures: number;
-  currentTableRows: number;
-  legacyRowCount: number;
-  lastError?: string;
-  retryCount?: number;
-  delayMs?: number;
 };
 
 export class EmbeddingMigrationWorker {
@@ -193,28 +177,10 @@ export class EmbeddingMigrationWorker {
     let retryableFailures = 0;
 
     if (legacyTables.length === 0) {
-      await this.writeMigrationStatus({
-        phase: 'idle',
-        currentDimension: currentDim,
-        batchSize,
-        migrated,
-        failed,
-        legacyTables: 0,
-        retryableFailures,
-      });
       this.debug?.basic('embedding_migration.skipped', { reason: 'no_legacy_tables' });
       return { migrated, failed, legacyTables: 0, retryableFailures };
     }
 
-    await this.writeMigrationStatus({
-      phase: 'running',
-      currentDimension: currentDim,
-      batchSize,
-      migrated,
-      failed,
-      legacyTables: legacyTables.length,
-      retryableFailures,
-    });
     this.debug?.basic('embedding_migration.start', { sourceTables: legacyTables.length, targetDimension: currentDim, batchSize });
 
     let remaining = batchSize;
@@ -269,16 +235,6 @@ export class EmbeddingMigrationWorker {
           );
 
           if (isRateLimit) {
-            await this.writeMigrationStatus({
-              phase: 'retry_backoff',
-              currentDimension: currentDim,
-              batchSize,
-              migrated,
-              failed,
-              legacyTables: legacyTables.length,
-              retryableFailures,
-              lastError: err instanceof Error ? err.message : String(err),
-            });
             remaining = 0;
             break;
           }
@@ -288,15 +244,6 @@ export class EmbeddingMigrationWorker {
       await this.backupLegacyTableIfEmpty(tableInfo.name, sourceTable);
     }
 
-    await this.writeMigrationStatus({
-      phase: legacyTables.length > 0 ? 'done' : 'idle',
-      currentDimension: currentDim,
-      batchSize,
-      migrated,
-      failed,
-      legacyTables: legacyTables.length,
-      retryableFailures,
-    });
     this.debug?.basic('embedding_migration.done', { migrated, failed, targetDimension: currentDim });
     return { migrated, failed, legacyTables: legacyTables.length, retryableFailures };
   }
@@ -319,18 +266,6 @@ export class EmbeddingMigrationWorker {
           retryCount,
           delayMs,
           message: error instanceof Error ? error.message : String(error),
-        });
-        await this.writeMigrationStatus({
-          phase: 'retry_backoff',
-          currentDimension: this.config.embedding?.dimension || 16,
-          batchSize: this.getEffectiveBatchSize(),
-          migrated: 0,
-          failed: 0,
-          legacyTables: 0,
-          retryableFailures: 1,
-          lastError: error instanceof Error ? error.message : String(error),
-          retryCount,
-          delayMs,
         });
         await this.sleep(delayMs);
       }
@@ -557,42 +492,6 @@ export class EmbeddingMigrationWorker {
     return configured;
   }
 
-  private async writeMigrationStatus(partial: Omit<MigrationStatusSnapshot, 'ts' | 'currentTableRows' | 'legacyRowCount'>): Promise<void> {
-    const dbPath = resolveLanceDbPath(this.config.lancedbPath);
-    const snapshot: MigrationStatusSnapshot = {
-      ...partial,
-      ts: new Date().toISOString(),
-      currentTableRows: await this.countTableRows(partial.currentDimension),
-      legacyRowCount: await this.countLegacyRows(partial.currentDimension),
-    };
-    writeFileSync(path.join(dbPath, 'embedding_migration_status.json'), `${JSON.stringify(snapshot, null, 2)}\n`);
-  }
-
-  private async countTableRows(dimension: number): Promise<number> {
-    try {
-      const table = await openMemoryTable(this.config.lancedbPath, dimension);
-      return await table.countRows();
-    } catch {
-      return 0;
-    }
-  }
-
-  private async countLegacyRows(currentDimension: number): Promise<number> {
-    try {
-      const tables = await discoverMemoryTables(this.config.lancedbPath, currentDimension);
-      let total = 0;
-      for (const tableInfo of tables) {
-        if (tableInfo.dimension === currentDimension) {
-          continue;
-        }
-        const table = await openMemoryTableByName(this.config.lancedbPath, tableInfo.name);
-        total += await table.countRows();
-      }
-      return total;
-    } catch {
-      return 0;
-    }
-  }
 }
 
 function toNumericVector(rawVector: unknown): number[] {

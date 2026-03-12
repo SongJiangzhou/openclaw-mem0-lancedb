@@ -1,6 +1,4 @@
-const MAX_QUERY_VARIANTS = 3;
-
-export type RecallQueryVariantKind = 'original' | 'compressed' | 'rewrite';
+export type RecallQueryVariantKind = 'original' | 'compressed';
 
 export interface RecallQueryVariant {
   text: string;
@@ -22,12 +20,7 @@ export function buildRecallQueryVariants(query: string): RecallQueryVariant[] {
     variants.push({ text: compressed, kind: 'compressed', weight: 1.15 });
   }
 
-  const rewritten = buildDeclarativeRewrite(compressed || original);
-  if (rewritten && !variants.some((variant) => variant.text === rewritten)) {
-    variants.push({ text: rewritten, kind: 'rewrite', weight: 0.95 });
-  }
-
-  return variants.slice(0, MAX_QUERY_VARIANTS);
+  return variants;
 }
 
 function collectCandidateSegments(query: string): string[] {
@@ -65,14 +58,6 @@ function scoreSegment(text: string): number {
   const characterDensity = countAlphaNumericOrCjk(text) / Math.max(length, 1);
 
   return hasQuestion + hasOperationalNoise + targetLength + punctuationPenalty + characterDensity;
-}
-
-function buildDeclarativeRewrite(text: string): string {
-  const normalized = normalizeQueryVariant(text).replace(/[?？]+$/u, '').trim();
-  if (!normalized || normalized === text) {
-    return normalized;
-  }
-  return normalized;
 }
 
 function extractRecallQueryBody(value: string): string {

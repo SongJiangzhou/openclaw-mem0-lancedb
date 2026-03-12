@@ -3,9 +3,10 @@ import { FileAuditStore } from '../audit/store';
 import { hasMem0Auth, buildMem0Headers } from '../control/auth';
 import type { PluginDebugLogger } from '../debug/logger';
 import { backfillLifecycleFields } from '../memory/lifecycle';
+import { payloadToRecord } from '../memory/mapper';
 import { inferMemoryAnnotations } from '../memory/typing';
 import { resolveSharedUserId } from '../memory/user-space';
-import type { MemoryRecord, PluginConfig } from '../types';
+import type { PluginConfig } from '../types';
 
 export class Mem0Poller {
   private timer: NodeJS.Timeout | null = null;
@@ -25,7 +26,7 @@ export class Mem0Poller {
     if (this.timer) {
       return;
     }
-    
+
     this.timer = setInterval(() => this.poll(), intervalMs);
     this.timer.unref?.();
   }
@@ -47,7 +48,7 @@ export class Mem0Poller {
       this.debug?.basic('mem0_poller.start', { baseUrl: this.config.mem0BaseUrl, mode: this.config.mem0Mode });
       const url = new URL(`${this.config.mem0BaseUrl}/v1/memories/`);
       url.searchParams.set('user_id', resolveSharedUserId());
-      
+
       const response = await fetch(url.toString(), {
         method: 'GET',
         headers: buildMem0Headers(this.config),
@@ -60,7 +61,7 @@ export class Mem0Poller {
       const data: any = await response.json();
       const memories = Array.isArray(data) ? data : Array.isArray(data.results) ? data.results : Array.isArray(data.items) ? data.items : [];
       this.debug?.basic('mem0_poller.fetched', { count: memories.length });
-      
+
       const adapter = new LanceDbMemoryAdapter(this.config.lancedbPath, this.config.embedding);
       let synced = 0;
 
@@ -105,7 +106,7 @@ export class Mem0Poller {
         });
         const duplicateMemoryUid = await adapter.findDuplicateMemoryUid(payload);
         const targetMemoryUid = duplicateMemoryUid || memoryUid;
-        const record = this.toRecord(targetMemoryUid, payload);
+        const record = payloadToRecord(targetMemoryUid, payload);
 
         if (this.auditStore) {
           await this.auditStore.append(record);
@@ -124,41 +125,5 @@ export class Mem0Poller {
       this.debug?.error('mem0_poller.error', { message: err instanceof Error ? err.message : String(err) });
       console.error('[Mem0Poller] Poll failed:', err);
     }
-  }
-
-  private toRecord(memoryUid: string, memory: ReturnType<typeof backfillLifecycleFields>): MemoryRecord {
-    const enriched = backfillLifecycleFields(memory);
-    return {
-      memory_uid: memoryUid,
-      user_id: enriched.user_id || resolveSharedUserId(),
-      session_id: enriched.session_id || '',
-      agent_id: enriched.agent_id || '',
-      run_id: enriched.run_id || null,
-      scope: enriched.scope || 'long-term',
-      text: enriched.text || '',
-      categories: enriched.categories || [],
-      tags: enriched.tags || [],
-      memory_type: enriched.memory_type || 'generic',
-      domains: enriched.domains || ['generic'],
-      source_kind: enriched.source_kind || 'assistant_inferred',
-      confidence: typeof enriched.confidence === 'number' ? enriched.confidence : 0.7,
-      ts_event: enriched.ts_event || new Date().toISOString(),
-      source: enriched.source || 'openclaw',
-      status: enriched.status || 'active',
-      lifecycle_state: enriched.lifecycle_state,
-      strength: enriched.strength,
-      stability: enriched.stability,
-      last_access_ts: enriched.last_access_ts,
-      next_review_ts: enriched.next_review_ts,
-      access_count: enriched.access_count,
-      inhibition_weight: enriched.inhibition_weight,
-      inhibition_until: enriched.inhibition_until,
-      utility_score: enriched.utility_score,
-      risk_score: enriched.risk_score,
-      retention_deadline: enriched.retention_deadline,
-      sensitivity: enriched.sensitivity || 'internal',
-      openclaw_refs: enriched.openclaw_refs || {},
-      mem0: enriched.mem0 || {},
-    };
   }
 }

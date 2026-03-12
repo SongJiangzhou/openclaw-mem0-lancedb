@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -197,7 +197,7 @@ serialTest('migration worker exits quietly when there are no legacy tables', asy
   }
 });
 
-serialTest('migration worker writes a status snapshot into the lancedb directory', async () => {
+serialTest('migration worker migrates legacy rows into the current dimension table', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'migration-worker-'));
 
   try {
@@ -213,14 +213,10 @@ serialTest('migration worker writes a status snapshot into the lancedb directory
 
     await worker.runOnce();
 
-    const statusPath = join(dir, 'embedding_migration_status.json');
-    assert.equal(existsSync(statusPath), true);
-
-    const snapshot = JSON.parse(readFileSync(statusPath, 'utf8'));
-    assert.equal(snapshot.currentDimension, 16);
-    assert.equal(snapshot.phase, 'done');
-    assert.equal(snapshot.currentTableRows, 1);
-    assert.equal(snapshot.legacyRowCount, 0);
+    // Verify the row landed in the current (16-dim) table
+    const currentTable = await openMemoryTable(dir, 16);
+    const rowCount = await currentTable.countRows();
+    assert.equal(rowCount, 1);
   } finally {
     safeCleanup(dir);
   }

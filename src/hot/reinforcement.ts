@@ -1,7 +1,8 @@
 import { FileAuditStore } from '../audit/store';
 import type { MemoryAdapter } from '../bridge/adapter';
 import { backfillLifecycleFields, reinforceLifecycle } from '../memory/lifecycle';
-import type { MemoryRecord, MemorySyncPayload, SearchResult } from '../types';
+import { recordToPayload } from '../memory/mapper';
+import type { SearchResult } from '../types';
 
 export async function reinforceRecalledMemories(params: {
   auditStore: FileAuditStore;
@@ -9,7 +10,7 @@ export async function reinforceRecalledMemories(params: {
   memories: SearchResult['memories'];
   nowIso?: string;
 }): Promise<number> {
-  const latestRows = await readLatestRows(params.auditStore);
+  const latestRows = await params.auditStore.readLatestRows();
   const latestByUid = new Map(latestRows.map((row) => [row.memory_uid, backfillLifecycleFields(row)]));
   const nowIso = params.nowIso || new Date().toISOString();
   let updatedCount = 0;
@@ -23,49 +24,10 @@ export async function reinforceRecalledMemories(params: {
     await params.auditStore.append(updated);
     await params.adapter.updateMemoryMetadata({
       memory_uid: updated.memory_uid,
-      memory: toPayload(updated),
+      memory: recordToPayload(updated),
     });
     updatedCount += 1;
   }
 
   return updatedCount;
-}
-
-async function readLatestRows(auditStore: FileAuditStore): Promise<MemoryRecord[]> {
-  return auditStore.readLatestRows();
-}
-
-function toPayload(record: MemoryRecord): MemorySyncPayload {
-  const enriched = backfillLifecycleFields(record);
-  return {
-    user_id: enriched.user_id,
-    session_id: enriched.session_id || '',
-    agent_id: enriched.agent_id || '',
-    run_id: enriched.run_id || null,
-    scope: enriched.scope,
-    text: enriched.text,
-    categories: enriched.categories || [],
-    tags: enriched.tags || [],
-    memory_type: enriched.memory_type || 'generic',
-    domains: enriched.domains || ['generic'],
-    source_kind: enriched.source_kind || 'assistant_inferred',
-    confidence: typeof enriched.confidence === 'number' ? enriched.confidence : 0.7,
-    ts_event: enriched.ts_event,
-    source: enriched.source,
-    status: enriched.status,
-    lifecycle_state: enriched.lifecycle_state,
-    strength: enriched.strength,
-    stability: enriched.stability,
-    last_access_ts: enriched.last_access_ts,
-    next_review_ts: enriched.next_review_ts,
-    access_count: enriched.access_count,
-    inhibition_weight: enriched.inhibition_weight,
-    inhibition_until: enriched.inhibition_until,
-    utility_score: enriched.utility_score,
-    risk_score: enriched.risk_score,
-    retention_deadline: enriched.retention_deadline,
-    sensitivity: enriched.sensitivity || 'internal',
-    openclaw_refs: enriched.openclaw_refs || {},
-    mem0: enriched.mem0 || {},
-  };
 }

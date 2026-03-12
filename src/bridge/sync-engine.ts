@@ -1,10 +1,11 @@
 import { FileAuditStore } from '../audit/store';
 import type { Mem0Client } from '../control/mem0';
 import { buildMemoryUid } from './uid';
-import { LanceDbMemoryAdapter, type MemoryAdapter } from './adapter';
+import type { MemoryAdapter } from './adapter';
 import type { FileOutbox } from './outbox';
 import { backfillLifecycleFields } from '../memory/lifecycle';
-import type { MemoryRecord, MemorySyncPayload, MemorySyncResult } from '../types';
+import { payloadToRecord } from '../memory/mapper';
+import type { MemorySyncPayload, MemorySyncResult } from '../types';
 
 export class MemorySyncEngine {
   private readonly outbox: FileOutbox;
@@ -38,7 +39,7 @@ export class MemorySyncEngine {
       memory.scope === 'session' ? String(memory.session_id || '') : '',
     );
     const enrichedMemory = backfillLifecycleFields(memory);
-    const record = this.toRecord(memoryUid, enrichedMemory);
+    const record = payloadToRecord(memoryUid, enrichedMemory);
 
     try {
       await this.auditStore.append(record);
@@ -94,46 +95,5 @@ export class MemorySyncEngine {
 
   private tsBucket(tsEvent: string): string {
     return new Date(tsEvent).toISOString().slice(0, 13);
-  }
-
-  private toRecord(memoryUid: string, memory: MemorySyncPayload): MemoryRecord {
-    return {
-      memory_uid: memoryUid,
-      user_id: memory.user_id,
-      session_id: memory.session_id || '',
-      agent_id: memory.agent_id || '',
-      run_id: memory.run_id || null,
-      scope: memory.scope,
-      text: memory.text,
-      categories: memory.categories || [],
-      tags: memory.tags || [],
-      memory_type: memory.memory_type || 'generic',
-      domains: memory.domains || ['generic'],
-      source_kind: memory.source_kind || 'user_explicit',
-      confidence: typeof memory.confidence === 'number' ? memory.confidence : 0.7,
-      ts_event: memory.ts_event,
-      source: memory.source,
-      status: memory.status,
-      lifecycle_state: memory.lifecycle_state,
-      strength: memory.strength,
-      stability: memory.stability,
-      last_access_ts: memory.last_access_ts,
-      next_review_ts: memory.next_review_ts,
-      access_count: memory.access_count,
-      inhibition_weight: memory.inhibition_weight,
-      inhibition_until: memory.inhibition_until,
-      utility_score: memory.utility_score,
-      risk_score: memory.risk_score,
-      retention_deadline: memory.retention_deadline,
-      sensitivity: memory.sensitivity || 'internal',
-      openclaw_refs: memory.openclaw_refs || {},
-      mem0: memory.mem0 || {},
-      lancedb: {
-        table: this.adapter instanceof LanceDbMemoryAdapter ? (this.adapter as any).config?.dimension === 16 ? 'memory_records' : `memory_records_d${(this.adapter as any).config?.dimension || 16}` : 'memory_records',
-        row_key: memoryUid,
-        vector_dim: (this.adapter as any).config?.dimension || 16,
-        index_version: null,
-      },
-    };
   }
 }

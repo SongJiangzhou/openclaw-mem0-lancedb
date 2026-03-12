@@ -4,8 +4,11 @@ import * as readline from 'node:readline';
 
 import type { MemoryRecord } from '../types';
 
+const COMPACT_THRESHOLD_ROWS = 5_000;
+
 export class FileAuditStore {
   private readonly filePath: string;
+  private appendsSinceCompact = 0;
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -14,6 +17,25 @@ export class FileAuditStore {
   async append(record: MemoryRecord): Promise<void> {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
     await fs.appendFile(this.filePath, `${JSON.stringify(record)}\n`, 'utf-8');
+    this.appendsSinceCompact += 1;
+    if (this.appendsSinceCompact >= COMPACT_THRESHOLD_ROWS) {
+      await this.compact();
+    }
+  }
+
+  /**
+   * Rewrite the audit log keeping only the latest version of each memory_uid.
+   * Drops deleted records older than 30 days. Prevents unbounded file growth.
+   */
+  async compact(): Promise<void> {
+    this.appendsSinceCompact = 0;
+    const latest = await this.readLatestRows();
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const retained = latest.filter(
+      (row) => !(row.status === 'deleted' && String(row.ts_event || '') < cutoff),
+    );
+    const content = retained.map((row) => JSON.stringify(row)).join('\n') + (retained.length > 0 ? '\n' : '');
+    await fs.writeFile(this.filePath, content, 'utf-8');
   }
 
   async findLatestByFilePath(filePath: string): Promise<MemoryRecord | null> {

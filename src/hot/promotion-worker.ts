@@ -5,6 +5,7 @@ import {
   backfillLifecycleFields,
   isRecallEligibleLifecycleState,
 } from '../memory/lifecycle';
+import { payloadToRecord } from '../memory/mapper';
 import type { MemoryRecord, MemorySyncPayload } from '../types';
 import type { PluginDebugLogger } from '../debug/logger';
 
@@ -103,7 +104,7 @@ export class MemoryPromotionWorker {
         continue;
       }
 
-      const record = toRecord(memoryUid, payload);
+      const record = payloadToRecord(memoryUid, payload);
       await this.auditStore.append(record);
       await this.adapter.upsertMemory({
         memory_uid: memoryUid,
@@ -175,42 +176,6 @@ function toLongTermPayload(row: MemoryRecord, nowIso: string): MemorySyncPayload
     access_count: enriched.access_count || 0,
     inhibition_weight: 0,
     inhibition_until: '',
-    utility_score: enriched.utility_score,
-    risk_score: enriched.risk_score,
-    retention_deadline: enriched.retention_deadline,
-    sensitivity: enriched.sensitivity || 'internal',
-    openclaw_refs: enriched.openclaw_refs || {},
-    mem0: enriched.mem0 || {},
-  };
-}
-
-function toRecord(memoryUid: string, payload: MemorySyncPayload): MemoryRecord {
-  const enriched = backfillLifecycleFields(payload);
-  return {
-    memory_uid: memoryUid,
-    user_id: enriched.user_id,
-    session_id: '',
-    agent_id: '',
-    run_id: enriched.run_id || null,
-    scope: 'long-term',
-    text: enriched.text,
-    categories: enriched.categories || [],
-    tags: enriched.tags || [],
-    memory_type: enriched.memory_type || 'generic',
-    domains: enriched.domains || ['generic'],
-    source_kind: enriched.source_kind || 'user_explicit',
-    confidence: typeof enriched.confidence === 'number' ? enriched.confidence : 0.7,
-    ts_event: enriched.ts_event,
-    source: enriched.source,
-    status: 'active',
-    lifecycle_state: enriched.lifecycle_state,
-    strength: enriched.strength,
-    stability: enriched.stability,
-    last_access_ts: enriched.last_access_ts,
-    next_review_ts: enriched.next_review_ts,
-    access_count: enriched.access_count,
-    inhibition_weight: enriched.inhibition_weight,
-    inhibition_until: enriched.inhibition_until,
     utility_score: enriched.utility_score,
     risk_score: enriched.risk_score,
     retention_deadline: enriched.retention_deadline,

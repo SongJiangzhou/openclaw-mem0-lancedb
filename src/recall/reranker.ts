@@ -1,4 +1,5 @@
 import type { RecallRerankerConfig, SearchResult } from '../types';
+import { stripPunctuation, longestCommonSubstringLength } from '../memory/text-utils';
 
 const BASE_RANK_SCALE = 1;
 const SUBSTRING_MATCH_BOOST = 1.5;
@@ -14,7 +15,7 @@ export interface RecallReranker {
 export function createLocalRecallReranker(): RecallReranker {
   return {
     async rerank(memories, query) {
-      const normalizedQuery = normalizeRecallText(query);
+      const normalizedQuery = stripPunctuation(query);
 
       return [...memories]
         .map((memory, index) => ({
@@ -115,7 +116,7 @@ async function rerankWithVoyage(
 }
 
 function computeRecallScore(text: string, normalizedQuery: string, index: number, total: number): number {
-  const normalizedText = normalizeRecallText(text);
+  const normalizedText = stripPunctuation(text);
   let score = (Math.max(total - index, 1) / Math.max(total, 1)) * BASE_RANK_SCALE;
 
   if (!normalizedQuery || !normalizedText) {
@@ -143,35 +144,6 @@ function computeRecallScore(text: string, normalizedQuery: string, index: number
   score += overlap * BIGRAM_SCALE;
 
   return score;
-}
-
-function normalizeRecallText(value: string): string {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[\s\p{P}\p{S}]+/gu, '')
-    .trim();
-}
-
-function longestCommonSubstringLength(left: string, right: string): number {
-  if (!left || !right) {
-    return 0;
-  }
-
-  const dp = new Array(right.length + 1).fill(0);
-  let maxLength = 0;
-
-  for (let i = 1; i <= left.length; i++) {
-    for (let j = right.length; j >= 1; j--) {
-      if (left[i - 1] === right[j - 1]) {
-        dp[j] = dp[j - 1] + 1;
-        maxLength = Math.max(maxLength, dp[j]);
-      } else {
-        dp[j] = 0;
-      }
-    }
-  }
-
-  return maxLength;
 }
 
 function buildBigrams(text: string): Set<string> {

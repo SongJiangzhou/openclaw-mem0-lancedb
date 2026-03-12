@@ -1,12 +1,14 @@
 import { buildMemoryUid } from '../bridge/uid';
-import { LanceDbMemoryAdapter, type MemoryAdapter } from '../bridge/adapter';
+import type { MemoryAdapter } from '../bridge/adapter';
 import type { Mem0ExtractedMemory } from '../control/mem0';
 import { FileAuditStore } from '../audit/store';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
 import { buildMemoryDedupKeys } from '../memory/dedup';
 import { backfillLifecycleFields } from '../memory/lifecycle';
+import { payloadToRecord } from '../memory/mapper';
+import { stripPunctuation, longestCommonSubstringLength } from '../memory/text-utils';
 import { inferMemoryAnnotations } from '../memory/typing';
-import type { MemoryRecord, MemorySyncPayload } from '../types';
+import type { MemorySyncPayload } from '../types';
 
 const CAPTURE_UID_BUCKET = '1970-01-01T00';
 
@@ -76,7 +78,7 @@ export async function syncCapturedMemories(params: {
       continue;
     }
 
-    const record = toRecord(memoryUid, memoryPayload, params.adapter);
+    const record = payloadToRecord(memoryUid, memoryPayload);
     await params.auditStore.append(record);
     await params.adapter.upsertMemory({
       memory_uid: memoryUid,
@@ -96,9 +98,9 @@ function shouldRejectCapturedMemory(
   memory: Mem0ExtractedMemory,
   captureContext?: { latestUserMessage?: string; latestAssistantMessage?: string },
 ): boolean {
-  const memoryText = normalizeCaptureText(memory.text);
-  const latestUserMessage = normalizeCaptureText(captureContext?.latestUserMessage || '');
-  const latestAssistantMessage = normalizeCaptureText(captureContext?.latestAssistantMessage || '');
+  const memoryText = stripPunctuation(memory.text);
+  const latestUserMessage = stripPunctuation(captureContext?.latestUserMessage || '');
+  const latestAssistantMessage = stripPunctuation(captureContext?.latestAssistantMessage || '');
 
   if (!memoryText) {
     return true;
@@ -126,19 +128,12 @@ function inferRejectReason(
   memory: Mem0ExtractedMemory,
   captureContext?: { latestUserMessage?: string; latestAssistantMessage?: string },
 ): string {
-  const memoryText = normalizeCaptureText(memory.text);
-  const latestUserMessage = normalizeCaptureText(captureContext?.latestUserMessage || '');
+  const memoryText = stripPunctuation(memory.text);
+  const latestUserMessage = stripPunctuation(captureContext?.latestUserMessage || '');
   if (memoryText && latestUserMessage && memoryText === latestUserMessage) {
     return 'query_echo';
   }
   return 'assistant_only_preference';
-}
-
-function normalizeCaptureText(value: string): string {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[\s\p{P}\p{S}]+/gu, '')
-    .trim();
 }
 
 function similarityScore(left: string, right: string): number {
@@ -148,28 +143,6 @@ function similarityScore(left: string, right: string): number {
 
   const common = longestCommonSubstringLength(left, right);
   return common / Math.max(Math.min(left.length, right.length), 1);
-}
-
-function longestCommonSubstringLength(left: string, right: string): number {
-  if (!left || !right) {
-    return 0;
-  }
-
-  const dp = new Array(right.length + 1).fill(0);
-  let maxLength = 0;
-
-  for (let i = 1; i <= left.length; i++) {
-    for (let j = right.length; j >= 1; j--) {
-      if (left[i - 1] === right[j - 1]) {
-        dp[j] = dp[j - 1] + 1;
-        maxLength = Math.max(maxLength, dp[j]);
-      } else {
-        dp[j] = 0;
-      }
-    }
-  }
-
-  return maxLength;
 }
 
 function toMemoryPayload(
@@ -216,46 +189,4 @@ function toMemoryPayload(
       hash: memory.hash,
     },
   });
-}
-
-function toRecord(memoryUid: string, memory: MemorySyncPayload, adapter: MemoryAdapter): MemoryRecord {
-  const enriched = backfillLifecycleFields(memory);
-  return {
-    memory_uid: memoryUid,
-    user_id: enriched.user_id,
-    session_id: enriched.session_id || '',
-    agent_id: enriched.agent_id || '',
-    run_id: enriched.run_id || null,
-    scope: enriched.scope,
-    text: enriched.text,
-    categories: enriched.categories || [],
-    tags: enriched.tags || [],
-    memory_type: enriched.memory_type || 'generic',
-    domains: enriched.domains || ['generic'],
-    source_kind: enriched.source_kind || 'assistant_inferred',
-    confidence: typeof enriched.confidence === 'number' ? enriched.confidence : 0.7,
-    ts_event: enriched.ts_event,
-    source: enriched.source,
-    status: enriched.status,
-    lifecycle_state: enriched.lifecycle_state,
-    strength: enriched.strength,
-    stability: enriched.stability,
-    last_access_ts: enriched.last_access_ts,
-    next_review_ts: enriched.next_review_ts,
-    access_count: enriched.access_count,
-    inhibition_weight: enriched.inhibition_weight,
-    inhibition_until: enriched.inhibition_until,
-    utility_score: enriched.utility_score,
-    risk_score: enriched.risk_score,
-    retention_deadline: enriched.retention_deadline,
-    sensitivity: enriched.sensitivity || 'internal',
-    openclaw_refs: enriched.openclaw_refs || {},
-    mem0: enriched.mem0 || {},
-    lancedb: {
-      table: adapter instanceof LanceDbMemoryAdapter ? (adapter as any).config?.dimension === 16 ? 'memory_records' : `memory_records_d${(adapter as any).config?.dimension || 16}` : 'memory_records',
-      row_key: memoryUid,
-      vector_dim: adapter instanceof LanceDbMemoryAdapter ? ((adapter as any).config?.dimension || 16) : 16,
-      index_version: null,
-    },
-  };
 }
