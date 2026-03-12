@@ -91,3 +91,28 @@ test('audit store can stream latest rows by memory uid', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('audit store append remains append-only even after many writes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'audit-store-append-only-'));
+
+  try {
+    const audit = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
+
+    for (let index = 0; index < 5000; index += 1) {
+      await audit.append({
+        ...buildRecord(),
+        memory_uid: 'm-append-only',
+        text: `version-${index}`,
+        ts_event: `2026-03-07T12:${String(index % 60).padStart(2, '0')}:00.000Z`,
+      });
+    }
+
+    const rows = await audit.readAll();
+
+    assert.equal(rows.length, 5000);
+    assert.equal(rows[0]?.memory_uid, 'm-append-only');
+    assert.equal(rows[rows.length - 1]?.text, 'version-4999');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

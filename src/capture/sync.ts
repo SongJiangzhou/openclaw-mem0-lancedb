@@ -1,5 +1,5 @@
 import { buildMemoryUid } from '../bridge/uid';
-import type { MemoryAdapter } from '../bridge/adapter';
+import { LanceDbMemoryAdapter, type MemoryAdapter } from '../bridge/adapter';
 import type { Mem0ExtractedMemory } from '../control/mem0';
 import { FileAuditStore } from '../audit/store';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
@@ -78,7 +78,9 @@ export async function syncCapturedMemories(params: {
       continue;
     }
 
-    const record = payloadToRecord(memoryUid, memoryPayload);
+    const record = payloadToRecord(memoryUid, memoryPayload, {
+      lancedb: buildLancedbMetadata(params.adapter, memoryUid),
+    });
     if (params.auditStore) {
       await params.auditStore.append(record);
     }
@@ -191,4 +193,14 @@ function toMemoryPayload(
       hash: memory.hash,
     },
   });
+}
+
+function buildLancedbMetadata(adapter: MemoryAdapter, memoryUid: string) {
+  const dimension = adapter instanceof LanceDbMemoryAdapter ? ((adapter as any).config?.dimension || 16) : 16;
+  return {
+    table: dimension === 16 ? 'memory_records' : `memory_records_d${dimension}`,
+    row_key: memoryUid,
+    vector_dim: dimension,
+    index_version: null,
+  };
 }

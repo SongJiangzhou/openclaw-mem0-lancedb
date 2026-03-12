@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { FakeMem0Client } from '../../src/control/mem0';
+import { FileAuditStore } from '../../src/audit/store';
 import { FileOutbox } from '../../src/bridge/outbox';
 import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
 import { MemorySyncEngine } from '../../src/bridge/sync-engine';
@@ -118,6 +119,35 @@ test('sync engine returns synced when audit, mem0 and lance all succeed', async 
     const result = await engine.processEvent('evt-ok', createMemory());
 
     assert.equal(result.status, 'synced');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sync engine writes lancedb provenance into audit records', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sync-engine-audit-'));
+
+  try {
+    const adapter = new InMemoryMemoryAdapter();
+    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
+    const outbox = new FileOutbox(join(dir, 'outbox.json'));
+    const mem0 = new FakeMem0Client(
+      { status: 'submitted', mem0_id: 'm1', event_id: 'evt-audit', hash: 'h1' },
+      { status: 'confirmed' },
+    );
+    const engine = new MemorySyncEngine(outbox, auditStore, adapter, mem0, { processInline: false });
+
+    const result = await engine.processEvent('evt-audit', createMemory());
+    const latestRows = await auditStore.readLatestRows();
+
+    assert.equal(result.status, 'accepted');
+    assert.equal(latestRows.length, 1);
+    assert.deepEqual(latestRows[0]?.lancedb, {
+      table: 'memory_records',
+      row_key: result.memory_uid,
+      vector_dim: 16,
+      index_version: null,
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

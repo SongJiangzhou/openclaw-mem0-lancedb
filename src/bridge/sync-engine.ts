@@ -1,7 +1,7 @@
 import { FileAuditStore } from '../audit/store';
 import type { Mem0Client } from '../control/mem0';
 import { buildMemoryUid } from './uid';
-import type { MemoryAdapter } from './adapter';
+import { LanceDbMemoryAdapter, type MemoryAdapter } from './adapter';
 import type { FileOutbox } from './outbox';
 import { backfillLifecycleFields } from '../memory/lifecycle';
 import { payloadToRecord } from '../memory/mapper';
@@ -39,7 +39,9 @@ export class MemorySyncEngine {
       memory.scope === 'session' ? String(memory.session_id || '') : '',
     );
     const enrichedMemory = backfillLifecycleFields(memory);
-    const record = payloadToRecord(memoryUid, enrichedMemory);
+    const record = payloadToRecord(memoryUid, enrichedMemory, {
+      lancedb: buildLancedbMetadata(this.adapter, memoryUid),
+    });
 
     if (this.auditStore) {
       try {
@@ -98,4 +100,14 @@ export class MemorySyncEngine {
   private tsBucket(tsEvent: string): string {
     return new Date(tsEvent).toISOString().slice(0, 13);
   }
+}
+
+function buildLancedbMetadata(adapter: MemoryAdapter, memoryUid: string) {
+  const dimension = adapter instanceof LanceDbMemoryAdapter ? ((adapter as any).config?.dimension || 16) : 16;
+  return {
+    table: dimension === 16 ? 'memory_records' : `memory_records_d${dimension}`,
+    row_key: memoryUid,
+    vector_dim: dimension,
+    index_version: null,
+  };
 }

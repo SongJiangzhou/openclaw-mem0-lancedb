@@ -5,8 +5,12 @@ import type { MemoryRecord, MemorySyncPayload } from '../types';
  * Replaces the duplicated toRecord() functions previously spread across
  * sync-engine, capture/sync, poller, and promotion-worker.
  */
-export function payloadToRecord(memoryUid: string, payload: MemorySyncPayload): MemoryRecord {
-  return {
+export function payloadToRecord(
+  memoryUid: string,
+  payload: MemorySyncPayload,
+  overrides?: Partial<MemoryRecord>,
+): MemoryRecord {
+  const baseRecord: MemoryRecord = {
     memory_uid: memoryUid,
     user_id: payload.user_id,
     session_id: payload.session_id || '',
@@ -37,6 +41,11 @@ export function payloadToRecord(memoryUid: string, payload: MemorySyncPayload): 
     sensitivity: payload.sensitivity ?? 'internal',
     openclaw_refs: payload.openclaw_refs ?? {},
     mem0: payload.mem0 ?? {},
+  };
+
+  return {
+    ...baseRecord,
+    ...overrides,
   };
 }
 

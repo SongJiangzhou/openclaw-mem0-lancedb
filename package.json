@@ -5,10 +5,10 @@
   "main": "dist/src/index.js",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "rebuild": "rm -rf dist && tsc",
     "dev": "tsc --watch",
-    "test": "node --test --test-concurrency=1 dist/tests/**/*.test.js",
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests/**/*.test.js",
     "install-plugin": "bash scripts/install.sh",
     "install-plugin:zh": "bash scripts/install_zh.sh",
     "mem0:setup": "uv venv && uv pip install mem0ai fastapi uvicorn pydantic google-genai",
