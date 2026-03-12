@@ -125,6 +125,12 @@ export class ToolName {
 - Configuration resolved in register function with defaults
 - Logger available at `api.logger?.info?.('message')`
 
+## Memory Filtering Rule
+
+- Never use word-level rules or token-level keyword matching as a memory admission, rejection, promotion, or recall-quality decision mechanism.
+- Do not implement heuristics that decide memory value based only on the presence of specific words, command names, file path fragments, or similar lexical cues.
+- If filtering is required, it must rely on stronger structural signals or broader semantic reasoning, not word-trigger rules.
+
 ## Key Dependencies
 
 - `@lancedb/lancedb`: Vector database for local memory storage

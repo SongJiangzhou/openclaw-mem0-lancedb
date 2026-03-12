@@ -33,7 +33,7 @@ test('resolveConfig sets embedding migration defaults', async () => {
   assert.equal(config.autoRecall.topK, 5);
   assert.equal(config.autoRecall.maxChars, 1400);
   assert.equal(config.autoCapture.enabled, true);
-  assert.equal(config.autoCapture.scope, 'session');
+  assert.equal(config.autoCapture.scope, 'long-term');
 });
 
 test('resolveConfig uses the unified memory directory defaults', async () => {
@@ -279,7 +279,7 @@ test('register exposes lifecycle hooks as the primary memory interface', async (
   assert.match(tools.find((tool) => tool.name === 'memory_get')?.description || '', /diagnostic|debug|admin/i);
 });
 
-test('register starts promotion worker with the plugin', async () => {
+test('register does not start promotion worker by default', async () => {
   const messages: string[] = [];
 
   register({
@@ -294,7 +294,7 @@ test('register starts promotion worker with the plugin', async () => {
     },
   } as any);
 
-  assert.ok(messages.some((msg) => msg.includes('"event":"plugin.promotion_worker_started"')));
+  assert.ok(messages.every((msg) => !msg.includes('"event":"plugin.promotion_worker_started"')));
 });
 
 test('register does not throw when auto-recall is enabled but no hook api exists', async () => {
@@ -621,6 +621,7 @@ test('auto-capture hook syncs extracted memories into local storage after mem0 c
     const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const records = await auditStore.readAll();
     assert.equal(records.length, 1);
+    assert.equal(records[0]?.scope, 'long-term');
     assert.equal(records[0]?.text, 'User prefers replies in English');
     assert.equal(records[0]?.mem0?.event_id, 'evt-capture');
   } finally {

@@ -109,7 +109,7 @@ function shouldRejectCapturedMemory(
   }
 
   const categories = new Set((memory.categories || []).map((item) => String(item || '').toLowerCase()));
-  const looksLikePreference = categories.has('preference') || /prefer|favorite|likes|like|喜欢|偏好|爱吃|爱喝/i.test(String(memory.text || ''));
+  const looksLikePreference = categories.has('preference');
   const assistantSimilarity = similarityScore(memoryText, latestAssistantMessage);
   const userSimilarity = similarityScore(memoryText, latestUserMessage);
   const supportedByAssistantOnly = Boolean(
