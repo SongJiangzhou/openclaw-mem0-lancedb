@@ -17,7 +17,6 @@ import { Mem0Poller } from './bridge/poller';
 import { EmbeddingMigrationWorker } from './hot/migration-worker';
 import { MemoryConsolidationWorker } from './hot/consolidation-worker';
 import { MemoryLifecycleWorker } from './hot/lifecycle-worker';
-import { MemoryPromotionWorker } from './hot/promotion-worker';
 import { reinforceRecalledMemories } from './hot/reinforcement';
 import { PluginDebugLogger, summarizeText } from './debug/logger';
 import { isLocalMem0BaseUrl } from './control/auth';
@@ -81,7 +80,7 @@ export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): Plu
     },
     autoCapture: {
       enabled: raw?.autoCapture?.enabled ?? true,
-      scope: raw?.autoCapture?.scope || 'session',
+      scope: raw?.autoCapture?.scope || 'long-term',
       requireAssistantReply: raw?.autoCapture?.requireAssistantReply ?? true,
       maxCharsPerMessage: raw?.autoCapture?.maxCharsPerMessage || 2000,
     },
@@ -221,17 +220,6 @@ export default function register(api: OpenClawApi) {
     );
     lifecycleWorker.start();
     debug.basic('plugin.lifecycle_worker_started', {});
-    const promotionWorker = new MemoryPromotionWorker(
-      {
-        auditStore,
-        adapter,
-        intervalMs: cfg.memoryConsolidation?.intervalMs || 6 * 60 * 60 * 1000,
-        batchSize: cfg.memoryConsolidation?.batchSize || 50,
-      },
-      debug,
-    );
-    promotionWorker.start();
-    debug.basic('plugin.promotion_worker_started', {});
   }
 
   // Hooks are the normal runtime path. Retained tools are operator/admin utilities.

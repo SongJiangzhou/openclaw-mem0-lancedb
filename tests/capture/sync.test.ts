@@ -240,3 +240,67 @@ test('capture sync rejects preference memories supported only by assistant outpu
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('capture sync rejects obvious command and path noise before persistence', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'capture-sync-noise-'));
+
+  try {
+    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
+    const adapter = new InMemoryMemoryAdapter();
+
+    const result = await syncCapturedMemories({
+      memories: [
+        createExtractedMemory({
+          text: 'Run `npm install` inside /home/example/project and then restart the shell.',
+          categories: ['generic'],
+          hash: 'hash-command-noise',
+        }),
+      ],
+      userId: 'user-1',
+      runId: 'run-1',
+      scope: 'long-term',
+      eventId: 'evt-capture-command-noise',
+      auditStore,
+      adapter,
+      tsEvent: '2026-03-07T12:00:00.000Z',
+    });
+
+    const records = await auditStore.readAll();
+    assert.equal(result.synced, 0);
+    assert.equal(records.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('capture sync rejects raw stack trace noise before persistence', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'capture-sync-trace-'));
+
+  try {
+    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
+    const adapter = new InMemoryMemoryAdapter();
+
+    const result = await syncCapturedMemories({
+      memories: [
+        createExtractedMemory({
+          text: 'Error: ENOENT at readFileSync (/srv/app/index.js:10:3) at Module._compile (node:internal/modules/cjs/loader:999:14)',
+          categories: ['generic'],
+          hash: 'hash-stack-noise',
+        }),
+      ],
+      userId: 'user-1',
+      runId: 'run-1',
+      scope: 'long-term',
+      eventId: 'evt-capture-stack-noise',
+      auditStore,
+      adapter,
+      tsEvent: '2026-03-07T12:00:00.000Z',
+    });
+
+    const records = await auditStore.readAll();
+    assert.equal(result.synced, 0);
+    assert.equal(records.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

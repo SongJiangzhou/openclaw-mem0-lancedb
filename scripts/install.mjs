@@ -250,7 +250,7 @@ export function buildDefaultPluginConfig(existingConfig = {}) {
     },
     autoCapture: {
       enabled: autoCaptureEnabled,
-      scope: existingAutoCapture.scope || 'session',
+      scope: existingAutoCapture.scope || 'long-term',
       requireAssistantReply: existingAutoCapture.requireAssistantReply ?? true,
       maxCharsPerMessage: existingAutoCapture.maxCharsPerMessage || 2000,
     },
@@ -469,7 +469,7 @@ export async function promptForConfig(strings, existingConfig = {}) {
     },
     autoCapture: {
       enabled: autoCaptureEnabled,
-      scope: 'session',
+      scope: 'long-term',
       requireAssistantReply: true,
       maxCharsPerMessage: 2000,
     },
