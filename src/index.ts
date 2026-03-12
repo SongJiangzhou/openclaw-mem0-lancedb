@@ -22,6 +22,8 @@ import { PluginDebugLogger, summarizeText } from './debug/logger';
 import { isLocalMem0BaseUrl } from './control/auth';
 import { getScopedMemoryIdentity, resolveSharedUserId } from './memory/user-space';
 import type { PluginConfig } from './types';
+import { runMaintenance, type MaintenanceAction } from './maintenance/runner';
+import { collectMaintenancePreflight } from './maintenance/preflight';
 
 function textResult(summary: string, details: any) {
   return {
@@ -189,40 +191,82 @@ export default function register(api: OpenClawApi) {
 
   void maybeAutoStartLocalMem0(cfg, debug);
   const auditStore = new FileAuditStore(cfg.auditStorePath);
-
-  const poller = new Mem0Poller(cfg, debug, auditStore);
-  poller.start();
-  debug.basic('plugin.poller_started', {});
-  const migrationWorker = new EmbeddingMigrationWorker(cfg, debug);
-  migrationWorker.start();
-  debug.basic('plugin.migration_worker_started', {});
   const adapter = new LanceDbMemoryAdapter(cfg.lancedbPath, cfg.embedding);
-  if (cfg.memoryConsolidation?.enabled ?? true) {
-    const consolidationWorker = new MemoryConsolidationWorker(
-      {
-        auditStore,
-        adapter,
-        intervalMs: cfg.memoryConsolidation?.intervalMs || 6 * 60 * 60 * 1000,
-        batchSize: cfg.memoryConsolidation?.batchSize || 50,
-      },
-      debug,
-    );
-    consolidationWorker.start();
-    debug.basic('plugin.consolidation_worker_started', {});
-    const lifecycleWorker = new MemoryLifecycleWorker(
-      {
-        auditStore,
-        adapter,
-        intervalMs: cfg.memoryConsolidation?.intervalMs || 6 * 60 * 60 * 1000,
-        batchSize: cfg.memoryConsolidation?.batchSize || 50,
-      },
-      debug,
-    );
-    lifecycleWorker.start();
-    debug.basic('plugin.lifecycle_worker_started', {});
-  }
+  const maintenanceBatchSize = cfg.memoryConsolidation?.batchSize || 50;
+  const maintenanceIntervalMs = cfg.memoryConsolidation?.intervalMs || 6 * 60 * 60 * 1000;
+  void collectMaintenancePreflight(cfg, adapter)
+    .then((preflight) => {
+      debug.basic('plugin.maintenance_preflight', preflight);
+    })
+    .catch((error) => {
+      debug.basic('plugin.maintenance_preflight', {
+        pendingSync: false,
+        legacyEmbeddingTables: 0,
+        consolidationCandidates: 0,
+        lifecycleCandidates: 0,
+      });
+      debug.error('plugin.maintenance_preflight_error', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
 
   // Hooks are the normal runtime path. Retained tools are operator/admin utilities.
+  api.registerTool({
+    name: 'memory_maintain',
+    description: 'Explicit maintenance runner for sync, migration, consolidation, and lifecycle actions',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['sync', 'migrate', 'consolidate', 'lifecycle', 'all'],
+          default: 'all',
+        },
+      },
+    },
+    async execute(_id: string, params: any) {
+      const action = (params?.action || 'all') as MaintenanceAction;
+      const result = await runMaintenance({
+        action,
+        tasks: {
+          sync: async () => {
+            const poller = new Mem0Poller(cfg, debug, auditStore);
+            await poller.poll();
+            return { synced: true };
+          },
+          migrate: async () => {
+            const migrationWorker = new EmbeddingMigrationWorker(cfg, debug);
+            return migrationWorker.runOnce();
+          },
+          consolidate: async () => {
+            const consolidationWorker = new MemoryConsolidationWorker({
+              adapter,
+              intervalMs: maintenanceIntervalMs,
+              batchSize: maintenanceBatchSize,
+            }, debug);
+            return consolidationWorker.runOnce();
+          },
+          lifecycle: async () => {
+            const lifecycleWorker = new MemoryLifecycleWorker({
+              adapter,
+              intervalMs: maintenanceIntervalMs,
+              batchSize: maintenanceBatchSize,
+            }, debug);
+            return lifecycleWorker.runOnce();
+          },
+        },
+      });
+      debug.basic('memory_maintain.done', {
+        action,
+        steps: result.steps.map((step) => step.action),
+      });
+      return textResult(
+        `memory_maintain: action=${action}, steps=${result.steps.map((step) => step.action).join(',')}`,
+        result,
+      );
+    },
+  });
+
   api.registerTool({
     name: 'memory_search',
     description: 'Operator/debug search for migrated memories from the local LanceDB-side store with optional Mem0 fallback',
@@ -372,7 +416,6 @@ export default function register(api: OpenClawApi) {
       });
       if (recall.candidateMemories.length > 0) {
         void reinforceRecalledMemories({
-          auditStore,
           adapter,
           memories: recall.candidateMemories,
         }).catch((error) => {

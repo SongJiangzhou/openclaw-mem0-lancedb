@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { FileAuditStore } from '../../src/audit/store';
 import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
 import { MemoryConsolidationWorker } from '../../src/hot/consolidation-worker';
+import { recordToPayload } from '../../src/memory/mapper';
 import type { MemoryRecord } from '../../src/types';
 
 function buildRecord(overrides?: Partial<MemoryRecord>): MemoryRecord {
@@ -37,7 +37,6 @@ test('consolidation worker supersedes duplicate active memories that share a sem
   const dir = mkdtempSync(join(tmpdir(), 'consolidation-worker-'));
 
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
 
     const first = buildRecord({
@@ -56,21 +55,17 @@ test('consolidation worker supersedes duplicate active memories that share a sem
       mem0: { hash: 'hash-coke' },
     });
 
-    await auditStore.append(first);
-    await auditStore.append(second);
-    await adapter.upsertMemory({ memory_uid: first.memory_uid, memory: toPayload(first) });
-    await adapter.upsertMemory({ memory_uid: second.memory_uid, memory: toPayload(second) });
+    await adapter.upsertMemory({ memory_uid: first.memory_uid, memory: recordToPayload(first) });
+    await adapter.upsertMemory({ memory_uid: second.memory_uid, memory: recordToPayload(second) });
 
     const worker = new MemoryConsolidationWorker({
-      auditStore,
       adapter,
       intervalMs: 60_000,
       batchSize: 50,
     });
 
     const result = await worker.runOnce();
-    const records = await auditStore.readAll();
-    const latestMem2 = records.filter((row) => row.memory_uid === 'mem-2').sort((a, b) => b.ts_event.localeCompare(a.ts_event))[0];
+    const latestMem2 = await adapter.getMemory('mem-2');
 
     assert.equal(result.superseded, 1);
     assert.equal(latestMem2?.status, 'superseded');
@@ -83,7 +78,6 @@ test('consolidation worker prefers stronger evidence when choosing the canonical
   const dir = mkdtempSync(join(tmpdir(), 'consolidation-worker-'));
 
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
 
     const weaker = buildRecord({
@@ -102,22 +96,18 @@ test('consolidation worker prefers stronger evidence when choosing the canonical
       mem0: { hash: 'hash-coke' },
     });
 
-    await auditStore.append(weaker);
-    await auditStore.append(stronger);
-    await adapter.upsertMemory({ memory_uid: weaker.memory_uid, memory: toPayload(weaker) });
-    await adapter.upsertMemory({ memory_uid: stronger.memory_uid, memory: toPayload(stronger) });
+    await adapter.upsertMemory({ memory_uid: weaker.memory_uid, memory: recordToPayload(weaker) });
+    await adapter.upsertMemory({ memory_uid: stronger.memory_uid, memory: recordToPayload(stronger) });
 
     const worker = new MemoryConsolidationWorker({
-      auditStore,
       adapter,
       intervalMs: 60_000,
       batchSize: 50,
     });
 
     await worker.runOnce();
-    const records = await auditStore.readAll();
-    const latestWeak = records.filter((row) => row.memory_uid === 'mem-weak').sort((a, b) => b.ts_event.localeCompare(a.ts_event))[0];
-    const latestStrong = records.filter((row) => row.memory_uid === 'mem-strong').sort((a, b) => b.ts_event.localeCompare(a.ts_event))[0];
+    const latestWeak = await adapter.getMemory('mem-weak');
+    const latestStrong = await adapter.getMemory('mem-strong');
 
     assert.equal(latestWeak?.status, 'superseded');
     assert.equal(latestStrong?.status, 'active');
@@ -125,24 +115,3 @@ test('consolidation worker prefers stronger evidence when choosing the canonical
     rmSync(dir, { recursive: true, force: true });
   }
 });
-
-function toPayload(record: MemoryRecord) {
-  return {
-    user_id: record.user_id,
-    run_id: record.run_id || null,
-    scope: record.scope,
-    text: record.text,
-    categories: record.categories || [],
-    tags: record.tags || [],
-    memory_type: record.memory_type || 'generic',
-    domains: record.domains || ['generic'],
-    source_kind: record.source_kind || 'assistant_inferred',
-    confidence: typeof record.confidence === 'number' ? record.confidence : 0.7,
-    ts_event: record.ts_event,
-    source: record.source,
-    status: record.status,
-    sensitivity: record.sensitivity || 'internal',
-    openclaw_refs: record.openclaw_refs || {},
-    mem0: record.mem0 || {},
-  } as const;
-}

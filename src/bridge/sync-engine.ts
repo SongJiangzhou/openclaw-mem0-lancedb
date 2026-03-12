@@ -9,14 +9,14 @@ import type { MemorySyncPayload, MemorySyncResult } from '../types';
 
 export class MemorySyncEngine {
   private readonly outbox: FileOutbox;
-  private readonly auditStore: FileAuditStore;
+  private readonly auditStore?: FileAuditStore;
   private readonly adapter: MemoryAdapter;
   private readonly mem0Client: Mem0Client;
   private readonly processInline: boolean;
 
   constructor(
     outbox: FileOutbox,
-    auditStore: FileAuditStore,
+    auditStore: FileAuditStore | undefined,
     adapter: MemoryAdapter,
     mem0Client: Mem0Client,
     options?: { processInline?: boolean },
@@ -41,10 +41,12 @@ export class MemorySyncEngine {
     const enrichedMemory = backfillLifecycleFields(memory);
     const record = payloadToRecord(memoryUid, enrichedMemory);
 
-    try {
-      await this.auditStore.append(record);
-    } catch {
-      return { status: 'failed', memory_uid: memoryUid };
+    if (this.auditStore) {
+      try {
+        await this.auditStore.append(record);
+      } catch {
+        return { status: 'failed', memory_uid: memoryUid };
+      }
     }
 
     const idempotencyKey = `${eventId}:${memoryUid}`;

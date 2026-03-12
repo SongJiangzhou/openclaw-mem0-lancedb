@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { FileAuditStore } from '../../src/audit/store';
 import { FakeMem0Client } from '../../src/control/mem0';
 import { FileOutbox } from '../../src/bridge/outbox';
 import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
@@ -31,9 +30,8 @@ test('sync engine returns accepted when audit write succeeds and processing is d
   try {
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
     const mem0 = new FakeMem0Client({ status: 'unavailable' }, { status: 'unavailable' });
-    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0, { processInline: false });
+    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0, { processInline: false });
 
     const result = await engine.processEvent('evt-1', createMemory());
 
@@ -50,12 +48,11 @@ test('sync engine returns duplicate when the same event is replayed', async () =
   try {
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
     const mem0 = new FakeMem0Client(
       { status: 'submitted', mem0_id: 'm1', event_id: 'evt-dup', hash: 'h1' },
       { status: 'confirmed' },
     );
-    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0);
+    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0);
     const memory = createMemory();
 
     const first = await engine.processEvent('evt-dup', memory);
@@ -75,9 +72,8 @@ test('sync engine returns partial when lance succeeds but mem0 is unavailable', 
   try {
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
     const mem0 = new FakeMem0Client({ status: 'unavailable' }, { status: 'unavailable' });
-    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0);
+    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0);
 
     const result = await engine.processEvent('evt-fail', createMemory());
 
@@ -93,12 +89,11 @@ test('sync engine returns partial when mem0 submission succeeds but confirmation
   try {
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
     const mem0 = new FakeMem0Client(
       { status: 'submitted', mem0_id: 'm1', event_id: 'evt-timeout', hash: 'h1' },
       { status: 'timeout' },
     );
-    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0);
+    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0);
 
     const result = await engine.processEvent('evt-timeout', createMemory());
 
@@ -114,12 +109,11 @@ test('sync engine returns synced when audit, mem0 and lance all succeed', async 
   try {
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
     const mem0 = new FakeMem0Client(
       { status: 'submitted', mem0_id: 'm1', event_id: 'evt-ok', hash: 'h1' },
       { status: 'confirmed' },
     );
-    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0);
+    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0);
 
     const result = await engine.processEvent('evt-ok', createMemory());
 
@@ -135,7 +129,6 @@ test('sync engine waits for mem0 confirmation with a non-zero retry window', asy
   try {
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const audit = new FileAuditStore(join(dir, 'audit.jsonl'));
     let waitOptions: { attempts?: number; delayMs?: number } | undefined;
     const mem0 = {
       async storeMemory() {
@@ -155,7 +148,7 @@ test('sync engine waits for mem0 confirmation with a non-zero retry window', asy
         return [];
       },
     };
-    const engine = new MemorySyncEngine(outbox, audit, adapter, mem0 as any);
+    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0 as any);
 
     const result = await engine.processEvent('evt-wait', createMemory());
 

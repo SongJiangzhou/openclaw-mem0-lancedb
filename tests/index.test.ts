@@ -277,6 +277,7 @@ test('register exposes lifecycle hooks as the primary memory interface', async (
   assert.match(tools.find((tool) => tool.name === 'memorySearch')?.description || '', /operator|debug|admin/i);
   assert.match(tools.find((tool) => tool.name === 'memoryStore')?.description || '', /manual|operator|admin/i);
   assert.match(tools.find((tool) => tool.name === 'memory_get')?.description || '', /diagnostic|debug|admin/i);
+  assert.match(tools.find((tool) => tool.name === 'memory_maintain')?.description || '', /maintenance|sync|lifecycle/i);
 });
 
 test('register does not start promotion worker by default', async () => {
@@ -295,6 +296,32 @@ test('register does not start promotion worker by default', async () => {
   } as any);
 
   assert.ok(messages.every((msg) => !msg.includes('"event":"plugin.promotion_worker_started"')));
+  assert.ok(messages.every((msg) => !msg.includes('"event":"plugin.poller_started"')));
+  assert.ok(messages.every((msg) => !msg.includes('"event":"plugin.migration_worker_started"')));
+  assert.ok(messages.every((msg) => !msg.includes('"event":"plugin.consolidation_worker_started"')));
+  assert.ok(messages.every((msg) => !msg.includes('"event":"plugin.lifecycle_worker_started"')));
+});
+
+test('register emits maintenance preflight instead of starting background maintenance', async () => {
+  const messages: string[] = [];
+
+  register({
+    pluginConfig: {
+      debug: { mode: 'debug' },
+      embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
+    },
+    registerTool() {},
+    logger: {
+      info(msg: string) {
+        messages.push(msg);
+      },
+    },
+  } as any);
+
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  assert.ok(messages.some((msg) => msg.includes('"event":"plugin.maintenance_preflight"')));
+  assert.ok(messages.every((msg) => !msg.includes('"event":"plugin.poller_started"')));
 });
 
 test('register does not throw when auto-recall is enabled but no hook api exists', async () => {

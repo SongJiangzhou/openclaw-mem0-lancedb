@@ -4,23 +4,22 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { FileAuditStore } from '../../src/audit/store';
 import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
 import { MemoryLifecycleWorker } from '../../src/hot/lifecycle-worker';
+import { recordToPayload } from '../../src/memory/mapper';
+import type { MemoryRecord } from '../../src/types';
 
 test('lifecycle worker reinforces reviewable memories', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'lifecycle-worker-review-'));
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
     const worker = new MemoryLifecycleWorker({
-      auditStore,
       adapter,
       intervalMs: 60_000,
       batchSize: 10,
     });
 
-    await auditStore.append({
+    const seeded: MemoryRecord = {
       memory_uid: 'review-1',
       user_id: 'user-1',
       run_id: null,
@@ -49,16 +48,16 @@ test('lifecycle worker reinforces reviewable memories', async () => {
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    };
+    await adapter.upsertMemory({ memory_uid: seeded.memory_uid, memory: recordToPayload(seeded) });
 
     const result = await worker.runOnce('2026-03-11T00:00:00.000Z');
     assert.equal(result.reviewed, 1);
 
-    const rows = await auditStore.readAll();
-    const latest = rows.at(-1)!;
-    assert.equal(latest.lifecycle_state, 'reinforced');
-    assert.equal((latest.stability || 0) > 30, true);
-    assert.equal(latest.next_review_ts! > '2026-03-11T00:00:00.000Z', true);
+    const latest = await adapter.getMemory('review-1');
+    assert.equal(latest?.lifecycle_state, 'reinforced');
+    assert.equal((latest?.stability || 0) > 30, true);
+    assert.equal((latest?.next_review_ts || '') > '2026-03-11T00:00:00.000Z', true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -67,16 +66,14 @@ test('lifecycle worker reinforces reviewable memories', async () => {
 test('lifecycle worker deletes expired memories, quarantines stale inferred memories, and inhibits low-utility generated memories', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'lifecycle-worker-evict-'));
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
     const worker = new MemoryLifecycleWorker({
-      auditStore,
       adapter,
       intervalMs: 60_000,
       batchSize: 10,
     });
 
-    await auditStore.append({
+    await adapter.upsertMemory({ memory_uid: 'expired-1', memory: recordToPayload({
       memory_uid: 'expired-1',
       user_id: 'user-1',
       run_id: null,
@@ -105,9 +102,9 @@ test('lifecycle worker deletes expired memories, quarantines stale inferred memo
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    } as MemoryRecord) });
 
-    await auditStore.append({
+    await adapter.upsertMemory({ memory_uid: 'quarantine-1', memory: recordToPayload({
       memory_uid: 'quarantine-1',
       user_id: 'user-1',
       run_id: null,
@@ -136,9 +133,9 @@ test('lifecycle worker deletes expired memories, quarantines stale inferred memo
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    } as MemoryRecord) });
 
-    await auditStore.append({
+    await adapter.upsertMemory({ memory_uid: 'inhibit-1', memory: recordToPayload({
       memory_uid: 'inhibit-1',
       user_id: 'user-1',
       run_id: null,
@@ -167,18 +164,16 @@ test('lifecycle worker deletes expired memories, quarantines stale inferred memo
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    } as MemoryRecord) });
 
     const result = await worker.runOnce('2026-03-11T00:00:00.000Z');
     assert.equal(result.deleted, 1);
     assert.equal(result.quarantined, 1);
     assert.equal(result.inhibited, 1);
 
-    const rows = await auditStore.readAll();
-    const latestByUid = new Map(rows.map((row) => [row.memory_uid, row]));
-    assert.equal(latestByUid.get('expired-1')?.lifecycle_state, 'deleted');
-    assert.equal(latestByUid.get('quarantine-1')?.lifecycle_state, 'quarantined');
-    assert.equal(latestByUid.get('inhibit-1')?.lifecycle_state, 'inhibited');
+    assert.equal((await adapter.getMemory('expired-1'))?.lifecycle_state, 'deleted');
+    assert.equal((await adapter.getMemory('quarantine-1'))?.lifecycle_state, 'quarantined');
+    assert.equal((await adapter.getMemory('inhibit-1'))?.lifecycle_state, 'inhibited');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -187,16 +182,14 @@ test('lifecycle worker deletes expired memories, quarantines stale inferred memo
 test('lifecycle worker quarantines stale session memories aggressively', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'lifecycle-worker-session-'));
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
     const worker = new MemoryLifecycleWorker({
-      auditStore,
       adapter,
       intervalMs: 60_000,
       batchSize: 10,
     });
 
-    await auditStore.append({
+    await adapter.upsertMemory({ memory_uid: 'session-1', memory: recordToPayload({
       memory_uid: 'session-1',
       user_id: 'default',
       session_id: 'session-a',
@@ -227,14 +220,13 @@ test('lifecycle worker quarantines stale session memories aggressively', async (
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    } as MemoryRecord) });
 
     const result = await worker.runOnce('2026-03-12T12:00:00.000Z');
     assert.equal(result.quarantined, 1);
 
-    const rows = await auditStore.readAll();
-    const latest = rows.at(-1)!;
-    assert.equal(latest.lifecycle_state, 'quarantined');
+    const latest = await adapter.getMemory('session-1');
+    assert.equal(latest?.lifecycle_state, 'quarantined');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -243,16 +235,14 @@ test('lifecycle worker quarantines stale session memories aggressively', async (
 test('lifecycle worker does not auto-isolate weak stale user-explicit memories', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'lifecycle-worker-user-explicit-'));
   try {
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
     const adapter = new InMemoryMemoryAdapter();
     const worker = new MemoryLifecycleWorker({
-      auditStore,
       adapter,
       intervalMs: 60_000,
       batchSize: 10,
     });
 
-    await auditStore.append({
+    await adapter.upsertMemory({ memory_uid: 'user-explicit-stale', memory: recordToPayload({
       memory_uid: 'user-explicit-stale',
       user_id: 'user-1',
       run_id: null,
@@ -281,15 +271,14 @@ test('lifecycle worker does not auto-isolate weak stale user-explicit memories',
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    } as MemoryRecord) });
 
     const result = await worker.runOnce('2026-03-13T00:00:00.000Z');
     assert.equal(result.inhibited, 0);
     assert.equal(result.quarantined, 0);
 
-    const rows = await auditStore.readAll();
-    const latest = rows.at(-1)!;
-    assert.equal(latest.lifecycle_state, 'active');
+    const latest = await adapter.getMemory('user-explicit-stale');
+    assert.equal(latest?.lifecycle_state, 'active');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

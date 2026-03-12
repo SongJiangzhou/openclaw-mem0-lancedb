@@ -1,4 +1,4 @@
-import { LanceDbMemoryAdapter } from './adapter';
+import { LanceDbMemoryAdapter, type MemoryAdapter } from './adapter';
 import { FileAuditStore } from '../audit/store';
 import { hasMem0Auth, buildMem0Headers } from '../control/auth';
 import type { PluginDebugLogger } from '../debug/logger';
@@ -13,12 +13,14 @@ export class Mem0Poller {
   private readonly config: PluginConfig;
   private readonly debug?: PluginDebugLogger;
   private readonly auditStore?: FileAuditStore;
+  private readonly adapter?: MemoryAdapter;
   private lastSyncTime: string;
 
-  constructor(config: PluginConfig, debug?: PluginDebugLogger, auditStore?: FileAuditStore) {
+  constructor(config: PluginConfig, debug?: PluginDebugLogger, auditStore?: FileAuditStore, adapter?: MemoryAdapter) {
     this.config = config;
     this.debug = debug;
     this.auditStore = auditStore;
+    this.adapter = adapter;
     this.lastSyncTime = new Date().toISOString();
   }
 
@@ -62,7 +64,7 @@ export class Mem0Poller {
       const memories = Array.isArray(data) ? data : Array.isArray(data.results) ? data.results : Array.isArray(data.items) ? data.items : [];
       this.debug?.basic('mem0_poller.fetched', { count: memories.length });
 
-      const adapter = new LanceDbMemoryAdapter(this.config.lancedbPath, this.config.embedding);
+      const adapter = this.adapter || new LanceDbMemoryAdapter(this.config.lancedbPath, this.config.embedding);
       let synced = 0;
 
       for (const mem of memories) {
