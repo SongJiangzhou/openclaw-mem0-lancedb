@@ -468,6 +468,74 @@ serialTest('migration worker upgrades a same-dimension legacy table without requ
   }
 });
 
+serialTest('migration worker upgrades an active same-dimension table when session fields are missing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'migration-worker-'));
+
+  try {
+    const db = await lancedb.connect(dir);
+    await db.createTable('memory_records_d1024', [{
+      memory_uid: 'memory-1',
+      user_id: 'user-1',
+      run_id: '',
+      scope: 'session',
+      text: 'User prefers concise answers',
+      categories: ['preference'],
+      tags: ['style'],
+      memory_type: 'generic',
+      domains: ['general'],
+      source_kind: 'user_explicit',
+      confidence: 0.9,
+      ts_event: new Date().toISOString(),
+      source: 'openclaw',
+      status: 'active',
+      sensitivity: 'internal',
+      openclaw_refs: '{}',
+      mem0_id: '',
+      mem0_event_id: '',
+      mem0_hash: '',
+      strength: 0.6,
+      stability: 1,
+      last_access_ts: '',
+      next_review_ts: '',
+      access_count: 0,
+      inhibition_weight: 0,
+      inhibition_until: '',
+      utility_score: 0.5,
+      risk_score: 0,
+      retention_deadline: '',
+      lifecycle_state: 'active',
+      lancedb_row_key: 'memory-1',
+      vector: new Array<number>(1024).fill(0.75),
+    }]);
+
+    const worker = new EmbeddingMigrationWorker({
+      ...baseConfig,
+      lancedbPath: dir,
+      outboxDbPath: join(dir, 'outbox.json'),
+      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
+      embedding: { provider: 'voyage' as const, baseUrl: 'https://api.voyageai.com/v1', apiKey: 'k', model: 'voyage-4-lite', dimension: 1024 },
+      embeddingMigration: { enabled: true, intervalMs: 60_000, batchSize: 20 },
+    });
+
+    await worker.runOnce();
+
+    const currentTable = await openMemoryTable(dir, 1024);
+    const migratedRows = await currentTable.query().where("memory_uid = 'memory-1'").toArray();
+    const schema = await currentTable.schema();
+    const fieldNames = schema.fields.map((field: any) => String(field.name));
+    const files = readdirSync(dir);
+
+    assert.equal(migratedRows.length, 1);
+    assert.ok(fieldNames.includes('session_id'));
+    assert.ok(fieldNames.includes('agent_id'));
+    assert.equal(migratedRows[0]?.session_id || '', '');
+    assert.equal(migratedRows[0]?.agent_id || '', '');
+    assert.ok(files.some((file) => /^memory_records_d1024_legacy_\d+\.bak$/.test(file)));
+  } finally {
+    safeCleanup(dir);
+  }
+});
+
 serialTest('migration worker skips deleted and empty-text legacy rows', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'migration-worker-'));
 

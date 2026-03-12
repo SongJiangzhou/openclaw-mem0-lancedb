@@ -17,6 +17,8 @@ const EMBEDDING_429_BASE_BACKOFF_MS = 1_000;
 const EMBEDDING_RATE_LIMIT_COOLDOWN_MS = 30_000;
 const VOYAGE_MAX_BATCH_SIZE = 5;
 const REQUIRED_SCHEMA_FIELDS = [
+  'session_id',
+  'agent_id',
   'memory_type',
   'strength',
   'stability',
