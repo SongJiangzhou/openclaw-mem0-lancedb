@@ -110,7 +110,6 @@ export type DebugMode = 'off' | 'debug';
 
 export interface DebugConfig {
   mode: DebugMode;
-  logDir?: string;
 }
 
 export interface AutoRecallConfig {

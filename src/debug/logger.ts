@@ -1,7 +1,3 @@
-import { appendFileSync, mkdirSync } from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-
 import type { DebugConfig } from '../types';
 
 export interface PluginLoggerSink {
@@ -22,12 +18,6 @@ const LOCAL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('sv-SE', {
   fractionalSecondDigits: 3,
   hour12: false,
 });
-const LOCAL_DATE_FORMATTER = new Intl.DateTimeFormat('sv-SE', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
 export class PluginDebugLogger {
   private readonly config: DebugConfig;
   private readonly sink?: PluginLoggerSink;
@@ -76,21 +66,6 @@ export class PluginDebugLogger {
     } catch {
       // Never let debug logging break the caller.
     }
-
-    if (this.config.logDir) {
-      this.writeLine(line);
-    }
-  }
-
-  private writeLine(line: string): void {
-    try {
-      const resolvedDir = resolvePath(this.config.logDir || '');
-      mkdirSync(resolvedDir, { recursive: true });
-      const logPath = path.join(resolvedDir, `${formatLocalDateStamp(new Date())}.log`);
-      appendFileSync(logPath, `${line}\n`, 'utf-8');
-    } catch {
-      // Never let file logging break the caller.
-    }
   }
 }
 
@@ -123,14 +98,6 @@ function sanitizeFields(fields: Record<string, unknown>): Record<string, unknown
   return sanitized;
 }
 
-function resolvePath(targetPath: string): string {
-  if (targetPath.startsWith('~/')) {
-    return path.join(os.homedir(), targetPath.slice(2));
-  }
-
-  return targetPath;
-}
-
 function formatLocalTimestamp(value: Date): string {
   const dateTime = LOCAL_DATE_TIME_FORMATTER.format(value).replace(' ', 'T');
   const offsetMinutes = -value.getTimezoneOffset();
@@ -140,8 +107,4 @@ function formatLocalTimestamp(value: Date): string {
   const offsetMins = String(absOffsetMinutes % 60).padStart(2, '0');
 
   return `${dateTime}${sign}${offsetHours}:${offsetMins}`;
-}
-
-function formatLocalDateStamp(value: Date): string {
-  return LOCAL_DATE_FORMATTER.format(value);
 }

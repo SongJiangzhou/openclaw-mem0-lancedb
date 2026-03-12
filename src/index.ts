@@ -54,12 +54,10 @@ const PLUGIN_VERSION = readPluginVersion();
 let localMem0StartupPromise: Promise<{ started: boolean; healthy: boolean }> | null = null;
 const LOCAL_MEM0_STARTUP_POLL_INTERVAL_MS = 300;
 const LOCAL_MEM0_STARTUP_MAX_ATTEMPTS = 30;
-const DEFAULT_DEBUG_LOG_DIR = '~/.openclaw/workspace/logs/openclaw-mem0-lancedb';
 
 export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): PluginConfig {
   const mem0 = resolveMem0Config(raw);
   const debugMode = raw?.debug?.mode || 'off';
-  const debugLogDir = raw?.debug?.logDir || (debugMode === 'debug' ? DEFAULT_DEBUG_LOG_DIR : undefined);
 
   return {
     lancedbPath: raw?.lancedbPath || '~/.openclaw/workspace/data/memory/lancedb',
@@ -100,7 +98,6 @@ export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): Plu
     },
     debug: {
       mode: debugMode,
-      logDir: debugLogDir,
     },
   };
 }
@@ -188,7 +185,6 @@ export default function register(api: OpenClawApi) {
     embeddingMigrationEnabled: cfg.embeddingMigration?.enabled ?? true,
     memoryConsolidationEnabled: cfg.memoryConsolidation?.enabled ?? true,
     debugMode: cfg.debug?.mode || 'off',
-    debugLogDir: cfg.debug?.logDir,
     adminTools: ['memory_search', 'memory_get', 'memorySearch', 'memoryStore'],
   });
 

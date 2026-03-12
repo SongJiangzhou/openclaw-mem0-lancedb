@@ -220,10 +220,10 @@ test('resolveConfig sets debug defaults', async () => {
   const config = resolveConfig();
 
   assert.equal(config.debug?.mode, 'off');
-  assert.equal(config.debug?.logDir, undefined);
+  assert.equal('logDir' in (config.debug || {}), false);
 });
 
-test('resolveConfig defaults debug logDir when debug mode is enabled', async () => {
+test('resolveConfig does not expose debug logDir when debug mode is enabled', async () => {
   const config = resolveConfig({
     debug: {
       mode: 'debug',
@@ -231,19 +231,7 @@ test('resolveConfig defaults debug logDir when debug mode is enabled', async () 
   } as any);
 
   assert.equal(config.debug?.mode, 'debug');
-  assert.equal(config.debug?.logDir, '~/.openclaw/workspace/logs/openclaw-mem0-lancedb');
-});
-
-test('resolveConfig respects debug overrides', async () => {
-  const config = resolveConfig({
-      debug: {
-      mode: 'debug',
-      logDir: '/tmp/openclaw-debug',
-    },
-  } as any);
-
-  assert.equal(config.debug?.mode, 'debug');
-  assert.equal(config.debug?.logDir, '/tmp/openclaw-debug');
+  assert.equal('logDir' in (config.debug || {}), false);
 });
 
 test('register installs auto-recall hook when enabled and hook api exists', async () => {
@@ -336,24 +324,24 @@ test('register logs plugin version to host logger', async () => {
   assert.ok(messages.some((msg) => /hook-first memory sidecar/i.test(msg)));
 });
 
-test('register includes plugin version in structured debug log file', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'index-debug-log-'));
+test('register does not include debugLogDir in structured debug output', async () => {
+  const messages: string[] = [];
 
-  try {
-    register({
-      pluginConfig: {
-        debug: { mode: 'debug', logDir: dir },
+  register({
+    pluginConfig: {
+      debug: { mode: 'debug' },
+    },
+    registerTool() {},
+    logger: {
+      info(msg: string) {
+        messages.push(msg);
       },
-      registerTool() {},
-    } as any);
+    },
+  } as any);
 
-    const date = LOCAL_DATE_FORMATTER.format(new Date());
-    const content = readFileSync(join(dir, `${date}.log`), 'utf-8');
-    assert.match(content, /plugin\.register/);
-    assert.match(content, /"pluginVersion":"0\.1\.0"/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  const pluginRegisterLog = messages.find((msg) => msg.includes('"event":"plugin.register"')) || '';
+  assert.ok(pluginRegisterLog);
+  assert.doesNotMatch(pluginRegisterLog, /debugLogDir/);
 });
 
 test('before_prompt_build injects auto-recall into prependSystemContext without surfacing it to the user', async () => {
