@@ -430,8 +430,8 @@ export async function promptForConfig(strings, existingConfig = {}) {
   const debugChoice = await select({
     message: withDefaultHint(strings.debugMode, strings.choices.debugOff, strings),
     options: [
-      { value: 'debug', label: strings.choices.debug },
       { value: 'off', label: strings.choices.debugOff },
+      { value: 'debug', label: strings.choices.debug },
     ],
     initialValue: existingDebug.mode || 'off',
   });

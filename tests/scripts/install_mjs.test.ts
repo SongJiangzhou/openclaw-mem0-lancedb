@@ -325,3 +325,17 @@ serialTest('install.mjs --yes keeps an existing remote mem0 api key', () => {
   assert.equal(pluginConfig?.autoRecall?.maxChars, 1400);
   assert.equal(pluginConfig?.autoRecall?.reranker?.provider, 'local');
 });
+
+serialTest('promptForConfig lists off before debug in debug mode choices', () => {
+  const source = readFileSync(INSTALLER_PATH, 'utf8');
+  const debugSelectBlock = source.match(/const debugChoice = await select\(\{[\s\S]*?options:\s*\[([\s\S]*?)\][\s\S]*?initialValue:/);
+
+  assert.ok(debugSelectBlock, 'debug select block not found');
+  const optionsBlock = debugSelectBlock[1] || '';
+  const offIndex = optionsBlock.indexOf("{ value: 'off', label: strings.choices.debugOff }");
+  const debugIndex = optionsBlock.indexOf("{ value: 'debug', label: strings.choices.debug }");
+
+  assert.notEqual(offIndex, -1);
+  assert.notEqual(debugIndex, -1);
+  assert.equal(offIndex < debugIndex, true);
+});
