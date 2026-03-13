@@ -131,6 +131,12 @@ export class ToolName {
 - Do not implement heuristics that decide memory value based only on the presence of specific words, command names, file path fragments, or similar lexical cues.
 - If filtering is required, it must rely on stronger structural signals or broader semantic reasoning, not word-trigger rules.
 
+## Exception Logging Rule
+
+- Any exception that is caught and then swallowed, downgraded, retried, converted into fallback behavior, or transformed into a non-throwing return value must emit a structured log at that catch boundary.
+- Boundary-level exception logs must be added before the code continues with fallback, retry, partial success, or empty-result behavior.
+- This rule applies to new and modified code. It does not imply the whole repository is already fully aligned.
+
 ## Key Dependencies
 
 - `@lancedb/lancedb`: Vector database for local memory storage
