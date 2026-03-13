@@ -16,7 +16,7 @@ Whether you are a beginner looking to give your agent a persistent identity, or 
 
 ## 🏗️ Architecture Overview
 
-The plugin employs a **Tri-Plane Embedded Architecture** designed for reliability, fast retrieval, and ultimate auditability.
+The plugin uses a **local-first memory architecture** designed for fast recall, explicit maintenance, and low operational overhead.
 
 ```mermaid
 graph TD
@@ -42,36 +42,29 @@ graph TD
             LDB --- FTS
         end
         
-        subgraph ControlPlane [🧠 Control Plane - Mem0]
+        subgraph ControlPlane [🧠 Control Layer - Mem0]
             class ControlPlane plane
             MClient[Mem0 Gateway]:::component
-            PWorker[Sync Poller]
-            MClient --- AutoCapture
-        end
-        
-        subgraph AuditPlane [📝 Audit Plane - File System]
-            class AuditPlane plane
-            ALog[(JSONL Audit Log)]:::db
-            Outbox(Sync Outbox)
+            Outbox[Sync Outbox]
+            MClient --- Outbox
         end
     end
 
     A --> Hooks
-    B -- memoryStore --> AuditPlane
+    B -- memoryStore --> ControlPlane
     B -- memorySearch --> HotPlane
     
     Hooks -- Auto Capture --> ControlPlane
     Hooks -- Auto Recall --> HotPlane
     
-    AuditPlane -. Async Sync .-> ControlPlane
     ControlPlane -. Extract & Sync .-> HotPlane
     HotPlane -. Fallback .-> ControlPlane
 ```
 
-### The Three Planes
-1. **📝 Audit Plane (Source of Truth)**: A file-first, append-only JSONL log (`auditStorePath`). It ensures no memory is lost and provides a human-readable tracing mechanism.
-2. **🔥 Hot Plane (Retrieval Layer)**: Powered by LanceDB, it provides blazing fast Hybrid Search (Vector + Full-Text Search + Reciprocal Rank Fusion) for immediate context recall.
-3. **🧠 Control Plane (Intelligence Layer)**: Uses Mem0 (Local or Remote) to intelligently extract entities, preferences, and facts from conversations, and handles cross-device synchronization.
+### The Three Layers
+1. **🔥 Local Memory Layer (LanceDB)**: The primary local memory state and retrieval surface. It powers hybrid recall with vector search, full-text search, and reranking-friendly candidate generation.
+2. **🧠 Control Layer (Mem0)**: Handles memory extraction, governance, and optional remote synchronization.
+3. **📦 Sync State Layer (Outbox)**: Tracks pending sync work without introducing a second source of truth. LanceDB remains the local state authority.
 
 ---
 
@@ -109,7 +102,6 @@ Add the plugin to your `openclaw.json` config file. Here is the minimal recommen
           },
           "lancedbPath": "~/.openclaw/workspace/data/memory/lancedb",
           "outboxDbPath": "~/.openclaw/workspace/data/memory/outbox.json",
-          "auditStorePath": "~/.openclaw/workspace/data/memory/audit/memory_records.jsonl",
           "autoRecall": {
             "enabled": true,
             "topK": 5
@@ -139,23 +131,17 @@ This plugin is designed as a **hook-first memory sidecar** for OpenClaw. In norm
 If your OpenClaw host supports standard hooks (`before_prompt_build`, `agent_end`), the plugin operates autonomously:
 
 ### 📥 Auto Capture (Primary Write Path)
-At the end of a turn (`agent_end`), if enabled, the plugin submits the `User + Assistant` conversation to Mem0. Mem0 extracts facts, preferences, and profile changes. The result is then synced into the local audit log and LanceDB hot plane.
+At the end of a turn (`agent_end`), if enabled, the plugin submits the `User + Assistant` conversation to Mem0. Mem0 extracts facts, preferences, and profile changes. The result is then synced into LanceDB as local memory state.
 
 ### 📤 Auto Recall (Primary Read Path)
 Before the agent replies (`before_prompt_build`), the plugin searches the hot plane using the latest user query. Relevant memories are injected into the prompt context automatically, so the model does not need to remember to call a search tool.
 
-### 🔁 Async Convergence: Poller And Workers
-Hooks own the dialogue-time path. Background components own eventual consistency:
+### 🔁 Explicit Maintenance
+Hooks own the dialogue-time path. Heavy maintenance is explicit rather than always-on:
 
-- `Mem0Poller` reconciles delayed Mem0 events and pulls confirmed captured memories back into local state.
-- `EmbeddingMigrationWorker` upgrades or fills vector data for legacy rows.
-- `MemoryConsolidationWorker` merges and cleans memory state to improve recall quality.
-- `MemoryLifecycleWorker` maintains lifecycle transitions and long-term search hygiene.
-
-This split is intentional:
-
-- hooks keep the user-facing path fast and deterministic
-- poller/worker processes repair and converge asynchronous state in the background
+- startup performs lightweight preflight checks
+- `memory_maintain` runs sync, migration, consolidation, or lifecycle tasks on demand
+- routine recall and capture stay focused on the end-to-end memory path
 
 ---
 
@@ -177,8 +163,8 @@ Manual operator/debug retrieval tools. They query the LanceDB Hot Plane using Hy
 ```
 
 ### 💾 `memoryStore`
-Manual admin write path for repair, import, and controlled testing. The write path still preserves the normal safety chain:
-`Operator -> Audit Plane -> Local Outbox -> Mem0 Control Plane -> LanceDB Hot Plane`
+Manual admin write path for repair, import, and controlled testing. The write path preserves the normal sync chain:
+`Operator -> Local Outbox -> Mem0 Control Layer -> LanceDB Local Memory Layer`
 
 ```json
 {
@@ -190,7 +176,7 @@ Manual admin write path for repair, import, and controlled testing. The write pa
 ```
 
 ### 📖 `memory_get`
-Reads raw JSONL snippets directly from the Audit Plane for diagnostics or deep chronological analysis.
+Reads stored memory records directly from LanceDB for diagnostics or targeted inspection.
 
 ---
 

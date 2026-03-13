@@ -16,7 +16,7 @@
 
 ## 🏗️ 架构概览 (Architecture Overview)
 
-本插件采用了**三平面内嵌架构 (Tri-Plane Embedded Architecture)**，旨在提供极致的稳定性、极速的检索能力以及完美的可审计性。
+本插件采用**本地优先的记忆架构**，目标是提升召回速度、降低运行时复杂度，并把维护动作收敛为显式流程。
 
 ```mermaid
 graph TD
@@ -42,36 +42,29 @@ graph TD
             LDB --- FTS
         end
         
-        subgraph ControlPlane [🧠 控制面 - Mem0]
+        subgraph ControlPlane [🧠 控制层 - Mem0]
             class ControlPlane plane
             MClient[Mem0 网关]:::component
-            PWorker[后台同步 Poller]
-            MClient --- AutoCapture
-        end
-        
-        subgraph AuditPlane [📝 审计面 - 文件系统]
-            class AuditPlane plane
-            ALog[(JSONL 审计日志)]:::db
-            Outbox(本地发件箱)
+            Outbox[同步 Outbox]
+            MClient --- Outbox
         end
     end
 
     A --> Hooks
-    B -- memoryStore 写入 --> AuditPlane
+    B -- memoryStore 写入 --> ControlPlane
     B -- memorySearch 搜索 --> HotPlane
     
     Hooks -- 自动捕捉 (Auto Capture) --> ControlPlane
     Hooks -- 自动召回 (Auto Recall) --> HotPlane
     
-    AuditPlane -. 异步同步 .-> ControlPlane
     ControlPlane -. 抽取并落盘 .-> HotPlane
     HotPlane -. 检索回退 (Fallback) .-> ControlPlane
 ```
 
-### 核心三平面设计
-1. **📝 审计面 (Audit Plane - 事实来源)**：基于文件系统的追加写（Append-only）JSONL 日志 (`auditStorePath`)。确保记忆永不丢失，并提供对人类友好的操作追溯能力。
-2. **🔥 热平面 (Hot Plane - 检索层)**：由 LanceDB 驱动，提供极速的混合检索（向量检索 + FTS 全文检索 + RRF 倒数综合排序），为每次对话提供即时上下文。
-3. **🧠 控制面 (Control Plane - 智能层)**：连接 Mem0（本地或云端服务），智能地从对话记录中抽取实体、用户偏好和事实，并负责跨设备的记忆同步。
+### 核心三层设计
+1. **🔥 本地记忆层（LanceDB）**：本地主状态与主检索面，负责混合召回、候选生成和上下文注入。
+2. **🧠 控制层（Mem0）**：负责记忆抽取、治理以及可选的远端同步。
+3. **📦 同步状态层（Outbox）**：只负责记录待同步工作，不再承担第二事实源；本地状态以 LanceDB 为准。
 
 ---
 
@@ -109,7 +102,6 @@ bash scripts/install.sh
           },
           "lancedbPath": "~/.openclaw/workspace/data/memory/lancedb",
           "outboxDbPath": "~/.openclaw/workspace/data/memory/outbox.json",
-          "auditStorePath": "~/.openclaw/workspace/data/memory/audit/memory_records.jsonl",
           "autoRecall": {
             "enabled": true,
             "topK": 5,
@@ -141,23 +133,17 @@ bash scripts/install.sh
 只要 OpenClaw 宿主支持标准钩子 (`before_prompt_build`, `agent_end`)，插件就会自动工作：
 
 ### 📥 自动捕捉 Auto Capture（主写入路径）
-回合结束（`agent_end`）时，插件会把最近一轮 `User + Assistant` 对话提交给 Mem0。Mem0 负责抽取偏好、事实和画像变化，再把结果同步回本地 audit 与 LanceDB 热面。
+回合结束（`agent_end`）时，插件会把最近一轮 `User + Assistant` 对话提交给 Mem0。Mem0 负责抽取偏好、事实和画像变化，再把结果同步回 LanceDB 本地记忆层。
 
 ### 📤 自动召回 Auto Recall（主读取路径）
 在 Agent 回复前（`before_prompt_build`），插件会根据最新用户问题自动检索热面记忆，并把相关内容注入上下文。模型不需要自己记得去调用检索工具。
 
-### 🔁 异步收敛：Poller 与 Workers
-Hooks 负责对话时刻的主链路，后台组件负责最终一致性：
+### 🔁 显式维护模型
+Hooks 负责对话时刻的主链路，重维护动作改为显式执行：
 
-- `Mem0Poller` 负责追踪延迟完成的 Mem0 事件，并把确认后的记忆同步回本地状态。
-- `EmbeddingMigrationWorker` 负责旧数据向量迁移与补齐。
-- `MemoryConsolidationWorker` 负责整理、合并和净化记忆，提升召回质量。
-- `MemoryLifecycleWorker` 负责生命周期状态维护，保证长期检索卫生。
-
-这样拆分是有意为之：
-
-- hooks 保证前台对话路径足够快、足够稳定
-- poller/worker 在后台完成异步收敛与修复
+- 启动时只做轻量 preflight 检查
+- `memory_maintain` 按需执行 sync、migration、consolidation、lifecycle
+- 日常 recall 与 capture 保持聚焦，避免后台常驻流程干扰主链路
 
 ---
 
@@ -179,8 +165,8 @@ Hooks 负责对话时刻的主链路，后台组件负责最终一致性：
 ```
 
 ### 💾 `memoryStore`
-用于手工修复、导入或受控测试的管理写入入口。写入链路仍保持同样的安全收敛路径：
-`Operator -> Audit 面落地 -> 本地 Outbox -> 同步 Mem0 控制面 -> 写入 LanceDB 热面更新索引`
+用于手工修复、导入或受控测试的管理写入入口。写入链路保持同样的同步收敛路径：
+`Operator -> 本地 Outbox -> Mem0 控制层 -> LanceDB 本地记忆层`
 
 ```json
 {
@@ -192,7 +178,7 @@ Hooks 负责对话时刻的主链路，后台组件负责最终一致性：
 ```
 
 ### 📖 `memory_get`
-直接从文件审计系统中读取原始 JSONL 日志切片，用于底层状态排障或时间线回溯分析。
+直接从 LanceDB 读取原始记忆记录，用于底层状态排障或定向检查。
 
 ---
 
