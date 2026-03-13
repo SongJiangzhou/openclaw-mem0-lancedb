@@ -1,16 +1,13 @@
-import { FileAuditStore } from '../audit/store';
 import type { MemoryAdapter } from '../bridge/adapter';
 import { buildMemoryUid } from '../bridge/uid';
 import {
   backfillLifecycleFields,
   isRecallEligibleLifecycleState,
 } from '../memory/lifecycle';
-import { payloadToRecord } from '../memory/mapper';
 import type { MemoryRecord, MemorySyncPayload } from '../types';
 import type { PluginDebugLogger } from '../debug/logger';
 
 type PromotionWorkerDeps = {
-  auditStore: FileAuditStore;
   adapter: MemoryAdapter;
   intervalMs: number;
   batchSize: number;
@@ -25,7 +22,6 @@ type PromotionRunResult = {
 const PROMOTION_UID_BUCKET = '1970-01-01T00';
 
 export class MemoryPromotionWorker {
-  private readonly auditStore: FileAuditStore;
   private readonly adapter: MemoryAdapter;
   private readonly intervalMs: number;
   private readonly batchSize: number;
@@ -33,7 +29,6 @@ export class MemoryPromotionWorker {
   private timer: NodeJS.Timeout | null = null;
 
   constructor(deps: PromotionWorkerDeps, debug?: PluginDebugLogger) {
-    this.auditStore = deps.auditStore;
     this.adapter = deps.adapter;
     this.intervalMs = deps.intervalMs;
     this.batchSize = deps.batchSize;
@@ -58,7 +53,8 @@ export class MemoryPromotionWorker {
   }
 
   async runOnce(nowIso: string = new Date().toISOString()): Promise<PromotionRunResult> {
-    const latestRows = (await this.auditStore.readLatestRows()).map((row) => backfillLifecycleFields(row));
+    const latestRows = (await this.adapter.listMemories({ scope: 'session', status: 'active' }))
+      .map((row) => backfillLifecycleFields({ memory_uid: row.memory_uid, ...row.memory } as MemoryRecord));
     let promoted = 0;
     let skipped = 0;
     let processed = 0;
@@ -103,9 +99,6 @@ export class MemoryPromotionWorker {
         processed += 1;
         continue;
       }
-
-      const record = payloadToRecord(memoryUid, payload);
-      await this.auditStore.append(record);
       await this.adapter.upsertMemory({
         memory_uid: memoryUid,
         memory: payload,

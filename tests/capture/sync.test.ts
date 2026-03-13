@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
-import { FileAuditStore } from '../../src/audit/store';
 import type { Mem0ExtractedMemory } from '../../src/control/mem0';
 import { PluginDebugLogger } from '../../src/debug/logger';
 import { syncCapturedMemories } from '../../src/capture/sync';
@@ -46,68 +45,6 @@ test('capture sync maps extracted memories into the adapter-backed store', async
     assert.equal(stored?.openclaw_refs?.file_path, 'AUTO_CAPTURE');
     assert.equal(stored?.memory_type, 'preference');
     assert.equal(stored?.source_kind, 'assistant_inferred');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('capture sync writes lancedb provenance into audit records', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'capture-sync-audit-'));
-
-  try {
-    const adapter = new InMemoryMemoryAdapter();
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
-
-    const result = await syncCapturedMemories({
-      memories: [createExtractedMemory()],
-      userId: 'user-1',
-      runId: 'run-1',
-      scope: 'long-term',
-      eventId: 'evt-capture',
-      auditStore,
-      adapter,
-      tsEvent: '2026-03-07T12:00:00.000Z',
-    });
-
-    const latestRows = await auditStore.readLatestRows();
-
-    assert.equal(result.synced, 1);
-    assert.equal(latestRows.length, 1);
-    assert.deepEqual(latestRows[0]?.lancedb, {
-      table: 'memory_records',
-      row_key: result.memoryUids[0],
-      vector_dim: 16,
-      index_version: null,
-    });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('capture sync continues when audit append fails', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'capture-sync-audit-fail-'));
-
-  try {
-    const adapter = new InMemoryMemoryAdapter();
-    const auditStore = {
-      async append() {
-        throw new Error('EACCES');
-      },
-    } as unknown as FileAuditStore;
-
-    const result = await syncCapturedMemories({
-      memories: [createExtractedMemory()],
-      userId: 'user-1',
-      runId: 'run-1',
-      scope: 'long-term',
-      eventId: 'evt-capture',
-      auditStore,
-      adapter,
-      tsEvent: '2026-03-07T12:00:00.000Z',
-    });
-
-    assert.equal(result.synced, 1);
-    assert.equal((await adapter.listMemories({ userId: 'user-1' })).length, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

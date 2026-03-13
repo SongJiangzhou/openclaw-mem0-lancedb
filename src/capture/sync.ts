@@ -1,11 +1,9 @@
 import { buildMemoryUid } from '../bridge/uid';
-import { LanceDbMemoryAdapter, type MemoryAdapter } from '../bridge/adapter';
+import type { MemoryAdapter } from '../bridge/adapter';
 import type { Mem0ExtractedMemory } from '../control/mem0';
-import { FileAuditStore } from '../audit/store';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
 import { buildMemoryDedupKeys } from '../memory/dedup';
 import { backfillLifecycleFields } from '../memory/lifecycle';
-import { payloadToRecord } from '../memory/mapper';
 import { stripPunctuation, longestCommonSubstringLength } from '../memory/text-utils';
 import { inferMemoryAnnotations } from '../memory/typing';
 import type { MemorySyncPayload } from '../types';
@@ -20,7 +18,6 @@ export async function syncCapturedMemories(params: {
   runId?: string | null;
   scope: 'long-term' | 'session';
   eventId: string | null;
-  auditStore?: FileAuditStore;
   adapter: MemoryAdapter;
   tsEvent?: string;
   debug?: PluginDebugLogger;
@@ -78,19 +75,6 @@ export async function syncCapturedMemories(params: {
       continue;
     }
 
-    const record = payloadToRecord(memoryUid, memoryPayload, {
-      lancedb: buildLancedbMetadata(params.adapter, memoryUid),
-    });
-    if (params.auditStore) {
-      try {
-        await params.auditStore.append(record);
-      } catch (err) {
-        params.debug?.exception('capture_sync.audit_append_failed', err, {
-          eventId: params.eventId,
-          memoryUid,
-        });
-      }
-    }
     await params.adapter.upsertMemory({
       memory_uid: memoryUid,
       memory: memoryPayload,
@@ -200,14 +184,4 @@ function toMemoryPayload(
       hash: memory.hash,
     },
   });
-}
-
-function buildLancedbMetadata(adapter: MemoryAdapter, memoryUid: string) {
-  const dimension = adapter instanceof LanceDbMemoryAdapter ? ((adapter as any).config?.dimension || 16) : 16;
-  return {
-    table: dimension === 16 ? 'memory_records' : `memory_records_d${dimension}`,
-    row_key: memoryUid,
-    vector_dim: dimension,
-    index_version: null,
-  };
 }

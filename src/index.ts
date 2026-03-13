@@ -3,7 +3,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 
-import { FileAuditStore } from './audit/store';
 import { LanceDbMemoryAdapter } from './bridge/adapter';
 import { MemorySearchTool } from './tools/search';
 import { MemoryStoreTool } from './tools/store';
@@ -67,7 +66,6 @@ export function resolveConfig(raw?: Partial<PluginConfig>, apiConfig?: any): Plu
     mem0BaseUrl: mem0.baseUrl,
     mem0ApiKey: mem0.apiKey,
     outboxDbPath: raw?.outboxDbPath || '~/.openclaw/workspace/data/memory/outbox.json',
-    auditStorePath: raw?.auditStorePath || '~/.openclaw/workspace/data/memory/audit/memory_records.jsonl',
     autoRecall: {
       enabled: raw?.autoRecall?.enabled ?? true,
       topK: raw?.autoRecall?.topK || 5,
@@ -190,7 +188,6 @@ export default function register(api: OpenClawApi) {
   });
 
   void maybeAutoStartLocalMem0(cfg, debug);
-  const auditStore = new FileAuditStore(cfg.auditStorePath);
   const adapter = new LanceDbMemoryAdapter(cfg.lancedbPath, cfg.embedding);
   const maintenanceBatchSize = cfg.memoryConsolidation?.batchSize || 50;
   const maintenanceIntervalMs = cfg.memoryConsolidation?.intervalMs || 6 * 60 * 60 * 1000;
@@ -230,7 +227,7 @@ export default function register(api: OpenClawApi) {
         action,
         tasks: {
           sync: async () => {
-            const poller = new Mem0Poller(cfg, debug.child('memory.poller'), auditStore);
+            const poller = new Mem0Poller(cfg, debug.child('memory.poller'));
             await poller.poll();
             return { synced: true };
           },
@@ -299,7 +296,7 @@ export default function register(api: OpenClawApi) {
 
   api.registerTool({
     name: 'memory_get',
-    description: 'Diagnostic reader for migrated memory snippets and audit-oriented inspection',
+    description: 'Diagnostic reader for memory snippets sourced from local LanceDB records',
     parameters: {
       type: 'object',
       properties: {
@@ -484,7 +481,6 @@ export default function register(api: OpenClawApi) {
             runId: payload.runId,
             scope: payload.scope,
             eventId: null,
-            auditStore: new FileAuditStore(cfg.auditStorePath),
             adapter: new LanceDbMemoryAdapter(cfg.lancedbPath, cfg.embedding),
             captureContext: {
               latestUserMessage: payload.messages.find((message) => message.role === 'user')?.content,
@@ -524,7 +520,6 @@ export default function register(api: OpenClawApi) {
               runId: payload.runId,
               scope: payload.scope,
               eventId: submitted.event_id,
-              auditStore: new FileAuditStore(cfg.auditStorePath),
               adapter: new LanceDbMemoryAdapter(cfg.lancedbPath, cfg.embedding),
               captureContext: {
                 latestUserMessage: payload.messages.find((message) => message.role === 'user')?.content,

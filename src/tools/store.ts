@@ -1,6 +1,5 @@
 import * as crypto from 'node:crypto';
 
-import { FileAuditStore } from '../audit/store';
 import { LanceDbMemoryAdapter } from '../bridge/adapter';
 import { FileOutbox } from '../bridge/outbox';
 import { MemorySyncEngine } from '../bridge/sync-engine';
@@ -40,10 +39,9 @@ export class MemoryStoreTool {
       });
       const eventId = `local-${crypto.randomUUID()}`;
       const outbox = new FileOutbox(this.config.outboxDbPath);
-      const auditStore = new FileAuditStore(this.config.auditStorePath);
       const adapter = new LanceDbMemoryAdapter(this.config.lancedbPath, this.config.embedding);
       const mem0Client = new HttpMem0Client(this.config, fetch, this.debug);
-      const engine = new MemorySyncEngine(outbox, auditStore, adapter, mem0Client, { debug: this.debug });
+      const engine = new MemorySyncEngine(outbox, adapter, mem0Client, { debug: this.debug });
       const payload = this.buildPayload({
         text,
         userId: identity.userId,

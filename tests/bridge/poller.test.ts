@@ -15,7 +15,6 @@ test('Mem0Poller starts and stops without error', () => {
     mem0BaseUrl: 'http://localhost',
     mem0ApiKey: 'test',
     outboxDbPath: '/tmp/test/outbox.json',
-    auditStorePath: '/tmp/test/audit.jsonl',
     autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' },
     autoCapture: { enabled: false, scope: 'long-term', requireAssistantReply: true, maxCharsPerMessage: 2000 },
   embedding: { provider: "fake" as const, baseUrl: "", apiKey: "", model: "", dimension: 16 },
@@ -35,7 +34,6 @@ test('Mem0Poller syncs fetched memories into the adapter-backed store', async ()
     mem0BaseUrl: 'http://localhost',
     mem0ApiKey: 'test',
     outboxDbPath: join(dir, 'outbox.json'),
-    auditStorePath: join(dir, 'audit.jsonl'),
     autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' },
     autoCapture: { enabled: false, scope: 'long-term', requireAssistantReply: true, maxCharsPerMessage: 2000 },
     embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
@@ -61,7 +59,7 @@ test('Mem0Poller syncs fetched memories into the adapter-backed store', async ()
   }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as any;
 
   try {
-    const poller = new Mem0Poller(cfg, undefined, undefined, adapter);
+    const poller = new Mem0Poller(cfg, undefined, adapter);
     await poller.poll();
     const rows = await adapter.listMemories({ userId: 'default' });
 

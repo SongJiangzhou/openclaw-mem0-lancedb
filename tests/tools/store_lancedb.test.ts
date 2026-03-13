@@ -10,13 +10,11 @@ test('store writes to LanceDB and is idempotent', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ldb-store-'));
   try {
     const outboxDbPath = join(dir, 'outbox.json');
-    const auditStorePath = join(dir, 'audit', 'memory_records.jsonl');
     const cfg = {
       lancedbPath: dir,
       mem0BaseUrl: '',
       mem0ApiKey: '',
       outboxDbPath,
-      auditStorePath,
       autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
       autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
   embedding: { provider: "fake" as const, baseUrl: "", apiKey: "", model: "", dimension: 16 },
@@ -47,8 +45,6 @@ test('store writes to LanceDB and is idempotent', async () => {
     assert.equal(outbox.items[0]?.status, 'done');
     assert.equal(outbox.items[1]?.status, 'done');
 
-    const auditLines = readFileSync(auditStorePath, 'utf-8').trim().split('\n').filter(Boolean);
-    assert.ok(auditLines.length >= 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

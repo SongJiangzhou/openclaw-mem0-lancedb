@@ -1,4 +1,3 @@
-import { FileAuditStore } from '../audit/store';
 import type { Mem0Client } from '../control/mem0';
 import { buildMemoryUid } from './uid';
 import { LanceDbMemoryAdapter, type MemoryAdapter } from './adapter';
@@ -10,7 +9,6 @@ import type { MemorySyncPayload, MemorySyncResult } from '../types';
 
 export class MemorySyncEngine {
   private readonly outbox: FileOutbox;
-  private readonly auditStore?: FileAuditStore;
   private readonly adapter: MemoryAdapter;
   private readonly mem0Client: Mem0Client;
   private readonly processInline: boolean;
@@ -18,13 +16,11 @@ export class MemorySyncEngine {
 
   constructor(
     outbox: FileOutbox,
-    auditStore: FileAuditStore | undefined,
     adapter: MemoryAdapter,
     mem0Client: Mem0Client,
     options?: { processInline?: boolean; debug?: PluginLogger },
   ) {
     this.outbox = outbox;
-    this.auditStore = auditStore;
     this.adapter = adapter;
     this.mem0Client = mem0Client;
     this.processInline = options?.processInline ?? true;
@@ -45,17 +41,6 @@ export class MemorySyncEngine {
     const record = payloadToRecord(memoryUid, enrichedMemory, {
       lancedb: buildLancedbMetadata(this.adapter, memoryUid),
     });
-
-    if (this.auditStore) {
-      try {
-        await this.auditStore.append(record);
-      } catch (err) {
-        this.debug?.exception('memory_sync.audit_append_failed', err, {
-          eventId,
-          memoryUid,
-        });
-      }
-    }
 
     const idempotencyKey = `${eventId}:${memoryUid}`;
     const payload = JSON.stringify({ event_id: eventId, memory_uid: memoryUid, memory: enrichedMemory });

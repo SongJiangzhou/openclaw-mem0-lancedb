@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { FileAuditStore } from '../src/audit/store';
+import { openMemoryTable } from '../src/db/table';
 import { MemoryStoreTool } from '../src/tools/store';
 import register, { maybeAutoStartLocalMem0, resolveConfig } from '../src/index';
 
@@ -41,7 +41,6 @@ test('resolveConfig uses the unified memory directory defaults', async () => {
 
   assert.equal(config.lancedbPath, '~/.openclaw/workspace/data/memory/lancedb');
   assert.equal(config.outboxDbPath, '~/.openclaw/workspace/data/memory/outbox.json');
-  assert.equal(config.auditStorePath, '~/.openclaw/workspace/data/memory/audit/memory_records.jsonl');
 });
 
 test('resolveConfig respects embedding migration overrides', async () => {
@@ -380,7 +379,6 @@ test('before_prompt_build injects auto-recall into prependSystemContext without 
     mem0BaseUrl: '',
     mem0ApiKey: '',
     outboxDbPath: join(dir, 'outbox.json'),
-    auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' as const },
     autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
     embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
@@ -398,7 +396,6 @@ test('before_prompt_build injects auto-recall into prependSystemContext without 
       pluginConfig: {
         lancedbPath: join(dir, 'lancedb'),
         outboxDbPath: join(dir, 'outbox.json'),
-        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
         autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
       },
@@ -444,7 +441,6 @@ test('before_prompt_build keeps recall hidden from user output in debug mode', a
     mem0BaseUrl: '',
     mem0ApiKey: '',
     outboxDbPath: join(dir, 'outbox.json'),
-    auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' as const },
     autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
     embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
@@ -462,7 +458,6 @@ test('before_prompt_build keeps recall hidden from user output in debug mode', a
       pluginConfig: {
         lancedbPath: join(dir, 'lancedb'),
         outboxDbPath: join(dir, 'outbox.json'),
-        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
         autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
         debug: { mode: 'debug' as const },
@@ -501,7 +496,6 @@ test('before_prompt_build logs empty recall emission in debug mode when no memor
       pluginConfig: {
         lancedbPath: join(dir, 'lancedb'),
         outboxDbPath: join(dir, 'outbox.json'),
-        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
         autoRecall: { enabled: true, topK: 3, maxChars: 300, scope: 'all' },
         debug: { mode: 'debug' as const },
@@ -603,7 +597,6 @@ test('auto-capture hook syncs extracted memories into local storage after mem0 c
     register({
       pluginConfig: {
         lancedbPath: join(dir, 'lancedb'),
-        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         outboxDbPath: join(dir, 'outbox.json'),
         mem0: {
           mode: 'remote',
@@ -645,12 +638,12 @@ test('auto-capture hook syncs extracted memories into local storage after mem0 c
     assert.equal(result?.confirmation?.status, 'confirmed');
     assert.equal(result?.synced?.synced, 1);
 
-    const auditStore = new FileAuditStore(join(dir, 'audit', 'memory_records.jsonl'));
-    const records = await auditStore.readAll();
+    const table = await openMemoryTable(join(dir, 'lancedb'));
+    const records = await table.query().where(`user_id = 'default'`).toArray();
     assert.equal(records.length, 1);
     assert.equal(records[0]?.scope, 'long-term');
     assert.equal(records[0]?.text, 'User prefers replies in English');
-    assert.equal(records[0]?.mem0?.event_id, 'evt-capture');
+    assert.equal(records[0]?.mem0_event_id, 'evt-capture');
   } finally {
     global.fetch = originalFetch;
     rmSync(dir, { recursive: true, force: true });
@@ -683,7 +676,6 @@ test('before_prompt_build injects pending capture notification into prependSyste
     register({
       pluginConfig: {
         lancedbPath: join(dir, 'lancedb'),
-        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         outboxDbPath: join(dir, 'outbox.json'),
         mem0: {
           mode: 'remote',
@@ -771,7 +763,6 @@ test('auto-capture does not send prior capture notification back to mem0 on the 
     register({
       pluginConfig: {
         lancedbPath: join(dir, 'lancedb'),
-        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         outboxDbPath: join(dir, 'outbox.json'),
         mem0: {
           mode: 'remote',
@@ -868,7 +859,6 @@ test('before_prompt_build clears pending capture notifications after injecting t
     register({
       pluginConfig: {
         lancedbPath: join(dir, 'lancedb'),
-        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         outboxDbPath: join(dir, 'outbox.json'),
         mem0: {
           mode: 'remote',
@@ -955,7 +945,6 @@ test('hook-first flow carries pending captured memory into the next turn without
     register({
       pluginConfig: {
         lancedbPath: join(dir, 'lancedb'),
-        auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
         outboxDbPath: join(dir, 'outbox.json'),
         mem0: {
           mode: 'remote',
@@ -1022,10 +1011,9 @@ test('hook-first flow carries pending captured memory into the next turn without
 test('auto-capture hook strips injected recall blocks before sanitization', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
 
-  register({
-    pluginConfig: {
-      lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
-      auditStorePath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'audit', 'memory_records.jsonl'),
+    register({
+      pluginConfig: {
+        lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
       outboxDbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'outbox.json'),
       mem0: { mode: 'remote', baseUrl: 'https://api.mem0.ai', apiKey: 'test-key' },
       embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
@@ -1082,10 +1070,9 @@ test('auto-capture hook strips injected recall blocks before sanitization', asyn
 test('auto-capture hook strips visible debug recall blocks before sanitization', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
 
-  register({
-    pluginConfig: {
-      lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
-      auditStorePath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'audit', 'memory_records.jsonl'),
+    register({
+      pluginConfig: {
+        lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
       outboxDbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'outbox.json'),
       mem0: { mode: 'remote', baseUrl: 'https://api.mem0.ai', apiKey: 'test-key' },
       embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
@@ -1138,10 +1125,9 @@ test('auto-capture hook strips visible debug recall blocks before sanitization',
 test('auto-capture hook strips host metadata and reply markers before submission', async () => {
   const hooks: Array<{ name: string; handler: Function }> = [];
 
-  register({
-    pluginConfig: {
-      lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
-      auditStorePath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'audit', 'memory_records.jsonl'),
+    register({
+      pluginConfig: {
+        lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
       outboxDbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'outbox.json'),
       mem0: { mode: 'remote', baseUrl: 'https://api.mem0.ai', apiKey: 'test-key' },
       embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
@@ -1211,7 +1197,6 @@ test('auto-capture logs empty extraction instead of unavailable when direct resp
     register({
       pluginConfig: {
         lancedbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'lancedb'),
-        auditStorePath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'audit', 'memory_records.jsonl'),
         outboxDbPath: join(mkdtempSync(join(tmpdir(), 'oc-test-')), 'outbox.json'),
         mem0: { mode: 'remote', baseUrl: 'https://api.mem0.ai', apiKey: 'test-key' },
         embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },

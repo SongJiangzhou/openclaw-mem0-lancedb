@@ -1,27 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
-import { FileAuditStore } from '../../src/audit/store';
 import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
 import { MemoryPromotionWorker } from '../../src/hot/promotion-worker';
 
 test('promotion worker copies eligible session memory into long-term scope', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'promotion-worker-eligible-'));
-  try {
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
-    const adapter = new InMemoryMemoryAdapter();
-    const worker = new MemoryPromotionWorker({
-      auditStore,
-      adapter,
-      intervalMs: 60_000,
-      batchSize: 10,
-    });
-
-    await auditStore.append({
-      memory_uid: 'session-1',
+  const adapter = new InMemoryMemoryAdapter();
+  await adapter.upsertMemory({
+    memory_uid: 'session-1',
+    memory: {
       user_id: 'default',
       session_id: 'session-a',
       agent_id: 'main',
@@ -51,38 +38,30 @@ test('promotion worker copies eligible session memory into long-term scope', asy
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    },
+  });
+  const worker = new MemoryPromotionWorker({
+    adapter,
+    intervalMs: 60_000,
+    batchSize: 10,
+  });
 
-    const result = await worker.runOnce('2026-03-12T02:00:00.000Z');
+  const result = await worker.runOnce('2026-03-12T02:00:00.000Z');
+  const rows = await adapter.listMemories({ userId: 'default' });
+  const promoted = rows.find((row) => row.memory.scope === 'long-term' && row.memory.text === 'Prefers sparkling water over soda.');
 
-    assert.equal(result.promoted, 1);
-
-    const rows = await auditStore.readAll();
-    const promoted = rows.find((row) => row.scope === 'long-term' && row.text === 'Prefers sparkling water over soda.');
-    assert.ok(promoted);
-    assert.equal(promoted?.user_id, 'default');
-    assert.equal(promoted?.session_id || '', '');
-    assert.equal(promoted?.agent_id || '', '');
-    assert.equal(promoted?.status, 'active');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  assert.equal(result.promoted, 1);
+  assert.ok(promoted);
+  assert.equal(promoted?.memory.session_id || '', '');
+  assert.equal(promoted?.memory.agent_id || '', '');
+  assert.equal(promoted?.memory.status, 'active');
 });
 
 test('promotion worker skips ineligible session memory', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'promotion-worker-skip-'));
-  try {
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
-    const adapter = new InMemoryMemoryAdapter();
-    const worker = new MemoryPromotionWorker({
-      auditStore,
-      adapter,
-      intervalMs: 60_000,
-      batchSize: 10,
-    });
-
-    await auditStore.append({
-      memory_uid: 'session-low-value',
+  const adapter = new InMemoryMemoryAdapter();
+  await adapter.upsertMemory({
+    memory_uid: 'session-low-value',
+    memory: {
       user_id: 'default',
       session_id: 'session-a',
       agent_id: 'main',
@@ -112,15 +91,17 @@ test('promotion worker skips ineligible session memory', async () => {
       sensitivity: 'internal',
       openclaw_refs: {},
       mem0: {},
-    });
+    },
+  });
+  const worker = new MemoryPromotionWorker({
+    adapter,
+    intervalMs: 60_000,
+    batchSize: 10,
+  });
 
-    const result = await worker.runOnce('2026-03-12T02:00:00.000Z');
+  const result = await worker.runOnce('2026-03-12T02:00:00.000Z');
+  const rows = await adapter.listMemories({ userId: 'default' });
 
-    assert.equal(result.promoted, 0);
-
-    const rows = await auditStore.readAll();
-    assert.equal(rows.filter((row) => row.scope === 'long-term').length, 0);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  assert.equal(result.promoted, 0);
+  assert.equal(rows.filter((row) => row.memory.scope === 'long-term').length, 0);
 });

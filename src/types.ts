@@ -60,7 +60,6 @@ export interface PluginConfig {
   mem0BaseUrl: string;
   mem0ApiKey: string;
   outboxDbPath: string;
-  auditStorePath: string;
   autoRecall: AutoRecallConfig;
   autoCapture: AutoCaptureConfig;
   embedding: EmbeddingConfig;

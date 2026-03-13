@@ -1,9 +1,7 @@
 import { LanceDbMemoryAdapter, type MemoryAdapter } from './adapter';
-import { FileAuditStore } from '../audit/store';
 import { hasMem0Auth, buildMem0Headers } from '../control/auth';
 import { PluginDebugLogger, type PluginLogger } from '../debug/logger';
 import { backfillLifecycleFields } from '../memory/lifecycle';
-import { payloadToRecord } from '../memory/mapper';
 import { inferMemoryAnnotations } from '../memory/typing';
 import { resolveSharedUserId } from '../memory/user-space';
 import type { PluginConfig } from '../types';
@@ -12,14 +10,12 @@ export class Mem0Poller {
   private timer: NodeJS.Timeout | null = null;
   private readonly config: PluginConfig;
   private readonly debug: PluginLogger;
-  private readonly auditStore?: FileAuditStore;
   private readonly adapter?: MemoryAdapter;
   private lastSyncTime: string;
 
-  constructor(config: PluginConfig, debug?: PluginLogger, auditStore?: FileAuditStore, adapter?: MemoryAdapter) {
+  constructor(config: PluginConfig, debug?: PluginLogger, adapter?: MemoryAdapter) {
     this.config = config;
     this.debug = debug || new PluginDebugLogger(config.debug).child('memory.poller');
-    this.auditStore = auditStore;
     this.adapter = adapter;
     this.lastSyncTime = new Date().toISOString();
   }
@@ -108,11 +104,6 @@ export class Mem0Poller {
         });
         const duplicateMemoryUid = await adapter.findDuplicateMemoryUid(payload);
         const targetMemoryUid = duplicateMemoryUid || memoryUid;
-        const record = payloadToRecord(targetMemoryUid, payload);
-
-        if (this.auditStore) {
-          await this.auditStore.append(record);
-        }
 
         await adapter.upsertMemory({
           memory_uid: targetMemoryUid,

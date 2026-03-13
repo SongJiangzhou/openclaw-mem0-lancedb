@@ -232,7 +232,6 @@ export function buildDefaultPluginConfig(existingConfig = {}) {
       },
     },
     outboxDbPath: path.join(memoryRoot, 'outbox.json'),
-    auditStorePath: path.join(memoryRoot, 'audit', 'memory_records.jsonl'),
     debug: {
       mode: existingDebug.mode || 'off',
     },
@@ -451,7 +450,6 @@ export async function promptForConfig(strings, existingConfig = {}) {
       },
     },
     outboxDbPath: path.join(memoryRoot, 'outbox.json'),
-    auditStorePath: path.join(memoryRoot, 'audit', 'memory_records.jsonl'),
     debug: {
       mode: debugChoice,
     },

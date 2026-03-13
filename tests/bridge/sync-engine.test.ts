@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { FakeMem0Client } from '../../src/control/mem0';
-import { FileAuditStore } from '../../src/audit/store';
 import { FileOutbox } from '../../src/bridge/outbox';
 import { InMemoryMemoryAdapter } from '../../src/bridge/adapter';
 import { MemorySyncEngine } from '../../src/bridge/sync-engine';
@@ -32,7 +31,7 @@ test('sync engine returns accepted when audit write succeeds and processing is d
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
     const mem0 = new FakeMem0Client({ status: 'unavailable' }, { status: 'unavailable' });
-    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0, { processInline: false });
+    const engine = new MemorySyncEngine(outbox, adapter, mem0, { processInline: false });
 
     const result = await engine.processEvent('evt-1', createMemory());
 
@@ -53,7 +52,7 @@ test('sync engine returns duplicate when the same event is replayed', async () =
       { status: 'submitted', mem0_id: 'm1', event_id: 'evt-dup', hash: 'h1' },
       { status: 'confirmed' },
     );
-    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0);
+    const engine = new MemorySyncEngine(outbox, adapter, mem0);
     const memory = createMemory();
 
     const first = await engine.processEvent('evt-dup', memory);
@@ -74,7 +73,7 @@ test('sync engine returns partial when lance succeeds but mem0 is unavailable', 
     const adapter = new InMemoryMemoryAdapter();
     const outbox = new FileOutbox(join(dir, 'outbox.json'));
     const mem0 = new FakeMem0Client({ status: 'unavailable' }, { status: 'unavailable' });
-    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0);
+    const engine = new MemorySyncEngine(outbox, adapter, mem0);
 
     const result = await engine.processEvent('evt-fail', createMemory());
 
@@ -94,7 +93,7 @@ test('sync engine returns partial when mem0 submission succeeds but confirmation
       { status: 'submitted', mem0_id: 'm1', event_id: 'evt-timeout', hash: 'h1' },
       { status: 'timeout' },
     );
-    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0);
+    const engine = new MemorySyncEngine(outbox, adapter, mem0);
 
     const result = await engine.processEvent('evt-timeout', createMemory());
 
@@ -114,63 +113,11 @@ test('sync engine returns synced when audit, mem0 and lance all succeed', async 
       { status: 'submitted', mem0_id: 'm1', event_id: 'evt-ok', hash: 'h1' },
       { status: 'confirmed' },
     );
-    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0);
+    const engine = new MemorySyncEngine(outbox, adapter, mem0);
 
     const result = await engine.processEvent('evt-ok', createMemory());
 
     assert.equal(result.status, 'synced');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('sync engine writes lancedb provenance into audit records', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sync-engine-audit-'));
-
-  try {
-    const adapter = new InMemoryMemoryAdapter();
-    const auditStore = new FileAuditStore(join(dir, 'audit.jsonl'));
-    const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const mem0 = new FakeMem0Client(
-      { status: 'submitted', mem0_id: 'm1', event_id: 'evt-audit', hash: 'h1' },
-      { status: 'confirmed' },
-    );
-    const engine = new MemorySyncEngine(outbox, auditStore, adapter, mem0, { processInline: false });
-
-    const result = await engine.processEvent('evt-audit', createMemory());
-    const latestRows = await auditStore.readLatestRows();
-
-    assert.equal(result.status, 'accepted');
-    assert.equal(latestRows.length, 1);
-    assert.deepEqual(latestRows[0]?.lancedb, {
-      table: 'memory_records',
-      row_key: result.memory_uid,
-      vector_dim: 16,
-      index_version: null,
-    });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('sync engine continues to lancedb when audit append fails', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sync-engine-audit-fail-'));
-
-  try {
-    const adapter = new InMemoryMemoryAdapter();
-    const outbox = new FileOutbox(join(dir, 'outbox.json'));
-    const mem0 = new FakeMem0Client({ status: 'unavailable' }, { status: 'unavailable' });
-    const auditStore = {
-      async append() {
-        throw new Error('EACCES');
-      },
-    } as unknown as FileAuditStore;
-    const engine = new MemorySyncEngine(outbox, auditStore, adapter, mem0);
-
-    const result = await engine.processEvent('evt-audit-fail', createMemory());
-
-    assert.equal(result.status, 'partial');
-    assert.equal(await adapter.exists(result.memory_uid), true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -201,7 +148,7 @@ test('sync engine waits for mem0 confirmation with a non-zero retry window', asy
         return [];
       },
     };
-    const engine = new MemorySyncEngine(outbox, undefined, adapter, mem0 as any);
+    const engine = new MemorySyncEngine(outbox, adapter, mem0 as any);
 
     const result = await engine.processEvent('evt-wait', createMemory());
 

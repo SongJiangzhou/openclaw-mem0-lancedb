@@ -23,7 +23,6 @@ const baseConfig = {
   mem0BaseUrl: '',
   mem0ApiKey: '',
   outboxDbPath: '',
-  auditStorePath: '',
   autoRecall: { enabled: false, topK: 5, maxChars: 800, scope: 'all' as const },
   autoCapture: { enabled: false, scope: 'long-term' as const, requireAssistantReply: true, maxCharsPerMessage: 2000 },
   embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 16 },
@@ -64,7 +63,6 @@ serialTest('migration worker moves legacy rows into the current-dimension table'
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     await worker.runOnce();
@@ -93,7 +91,6 @@ serialTest('migration worker renames a fully migrated legacy table to .bak and r
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     await worker.runOnce();
@@ -121,7 +118,6 @@ serialTest('migration worker migrates the legacy main table into the current emb
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
       embedding: { provider: 'fake' as const, baseUrl: '', apiKey: '', model: '', dimension: 768 },
     });
 
@@ -160,7 +156,6 @@ serialTest('migration worker keeps legacy rows when destination upsert fails', a
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     await worker.runOnce();
@@ -188,7 +183,6 @@ serialTest('migration worker exits quietly when there are no legacy tables', asy
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     await assert.doesNotReject(async () => worker.runOnce());
@@ -208,7 +202,6 @@ serialTest('migration worker migrates legacy rows into the current dimension tab
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     await worker.runOnce();
@@ -249,7 +242,6 @@ serialTest('migration worker start triggers an immediate migration pass before t
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     worker.start(60_000);
@@ -305,7 +297,6 @@ serialTest('migration worker retries 429 embedding failures with backoff and eve
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     await worker.runOnce();
@@ -350,7 +341,6 @@ serialTest('migration worker stops the current batch after a rate limit failure 
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
       embedding: { provider: 'voyage' as const, baseUrl: 'https://api.voyageai.com/v1', apiKey: 'k', model: 'voyage-4-lite', dimension: 1024 },
       embeddingMigration: { enabled: true, intervalMs: 60_000, batchSize: 20 },
     });
@@ -399,7 +389,6 @@ serialTest('migration worker renames an outdated active table, recreates the cur
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     await worker.runOnce();
@@ -446,7 +435,6 @@ serialTest('migration worker upgrades a same-dimension legacy table without requ
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
       embedding: { provider: 'voyage' as const, baseUrl: 'https://api.voyageai.com/v1', apiKey: 'k', model: 'voyage-4-lite', dimension: 1024 },
       embeddingMigration: { enabled: true, intervalMs: 60_000, batchSize: 20 },
     });
@@ -508,7 +496,6 @@ serialTest('migration worker upgrades an active same-dimension table when sessio
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
       embedding: { provider: 'voyage' as const, baseUrl: 'https://api.voyageai.com/v1', apiKey: 'k', model: 'voyage-4-lite', dimension: 1024 },
       embeddingMigration: { enabled: true, intervalMs: 60_000, batchSize: 20 },
     });
@@ -546,7 +533,6 @@ serialTest('migration worker skips deleted and empty-text legacy rows', async ()
       ...baseConfig,
       lancedbPath: dir,
       outboxDbPath: join(dir, 'outbox.json'),
-      auditStorePath: join(dir, 'audit', 'memory_records.jsonl'),
     });
 
     await worker.runOnce();

@@ -10,7 +10,7 @@
 - explicit maintenance instead of default background maintenance
 - structured observability
 
-The current implementation on `main` is simpler than some earlier designs and older research notes. In particular, it no longer relies on always-on maintenance workers or a JSONL audit file as the primary state source.
+The current implementation on `main` is simpler than some earlier designs and older research notes. In particular, it no longer relies on always-on maintenance workers or any JSONL audit layer.
 
 ## Runtime Flow
 
@@ -57,17 +57,6 @@ Current roles:
 - optional synchronization / maintenance action targets
 
 If Mem0 is unavailable or partially failing, local LanceDB recall should still provide the best available result set.
-
-### Audit JSONL
-
-The audit file is no longer the intended primary state source.
-
-Current role:
-
-- audit/debug artifact
-- append-only operational trace of memory write activity where used
-
-It should not be treated as the canonical state source for lifecycle or recall decisions.
 
 ## Recall Pipeline
 

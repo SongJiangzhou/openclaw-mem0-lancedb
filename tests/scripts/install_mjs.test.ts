@@ -65,7 +65,6 @@ serialTest('install.mjs --yes writes defaults into openclaw.json', () => {
   assert.equal(pluginConfig?.mem0?.llm?.model, 'deepseek-chat');
   assert.equal(pluginConfig?.lancedbPath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'lancedb'));
   assert.equal(pluginConfig?.outboxDbPath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'outbox.json'));
-  assert.equal(pluginConfig?.auditStorePath, join(homeDir, '.openclaw', 'workspace', 'data', 'memory', 'audit', 'memory_records.jsonl'));
   assert.equal(pluginConfig?.debug?.mode, 'off');
   assert.equal(pluginConfig?.autoRecall?.enabled, true);
   assert.equal(pluginConfig?.autoRecall?.topK, 5);
@@ -150,7 +149,6 @@ serialTest('buildDefaultPluginConfig preserves an existing remote mem0 api key',
   assert.equal(config.mem0.llm.model, 'deepseek-chat');
   assert.equal(config.lancedbPath, join(memoryRoot, 'lancedb'));
   assert.equal(config.outboxDbPath, join(memoryRoot, 'outbox.json'));
-  assert.equal(config.auditStorePath, join(memoryRoot, 'audit', 'memory_records.jsonl'));
   assert.equal(config.autoRecall.topK, 5);
   assert.equal(config.autoRecall.maxChars, 1400);
   assert.equal(config.autoRecall.scope, 'all');
