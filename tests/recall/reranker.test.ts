@@ -117,3 +117,24 @@ test('createRecallReranker prefers current explicit preference memories over old
 
   assert.equal(ranked[0]?.text, 'User now prefers grilled chicken burgers');
 });
+
+test('createRecallReranker does not penalize a relevant memory just because it mentions workspace-like text', async () => {
+  const reranker = createRecallReranker({
+    provider: 'local',
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+  });
+
+  const ranked = await reranker.rerank(
+    [
+      buildMemory('User keeps project planning notes in workspace', {
+        source_kind: 'assistant_inferred',
+      }),
+      buildMemory('User keeps planning checklists on paper'),
+    ],
+    'Where are my project planning notes stored?',
+  );
+
+  assert.equal(ranked[0]?.text, 'User keeps project planning notes in workspace');
+});
