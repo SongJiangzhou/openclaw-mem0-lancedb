@@ -7,7 +7,6 @@ const SUBSTRING_MATCH_BOOST = 1.5;
 const LCS_SCALE = 2.5;
 const BIGRAM_SCALE = 1.5;
 const QUERY_ECHO_PENALTY = 3;
-const OPERATIONAL_NOISE_PENALTY = 2.5;
 const CURRENT_TEMPORAL_BONUS = 0.8;
 const RECENT_TEMPORAL_BONUS = 0.45;
 const HISTORICAL_TEMPORAL_PENALTY = 0.35;
@@ -199,10 +198,6 @@ function computeRecallScore(text: string, normalizedQuery: string, index: number
     return score - QUERY_ECHO_PENALTY;
   }
 
-  if (looksOperationalNoise(text)) {
-    score -= OPERATIONAL_NOISE_PENALTY;
-  }
-
   if (normalizedText.includes(normalizedQuery) || normalizedQuery.includes(normalizedText)) {
     score += SUBSTRING_MATCH_BOOST;
   }
@@ -247,8 +242,4 @@ function jaccardSimilarity(left: Set<string>, right: Set<string>): number {
 
   const union = left.size + right.size - intersection;
   return union > 0 ? intersection / union : 0;
-}
-
-function looksOperationalNoise(text: string): boolean {
-  return /\/|\\|\.jsonl\b|written to|saved to|data written|workspace|scripts\//i.test(String(text || ''));
 }

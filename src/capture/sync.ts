@@ -4,7 +4,7 @@ import type { Mem0ExtractedMemory } from '../control/mem0';
 import { summarizeText, type PluginDebugLogger } from '../debug/logger';
 import { buildMemoryDedupKeys } from '../memory/dedup';
 import { backfillLifecycleFields } from '../memory/lifecycle';
-import { stripPunctuation, longestCommonSubstringLength } from '../memory/text-utils';
+import { stripPunctuation } from '../memory/text-utils';
 import { inferMemoryAnnotations } from '../memory/typing';
 import type { MemorySyncPayload } from '../types';
 
@@ -95,7 +95,6 @@ function shouldRejectCapturedMemory(
 ): boolean {
   const memoryText = stripPunctuation(memory.text);
   const latestUserMessage = stripPunctuation(captureContext?.latestUserMessage || '');
-  const latestAssistantMessage = stripPunctuation(captureContext?.latestAssistantMessage || '');
 
   if (!memoryText) {
     return true;
@@ -105,18 +104,7 @@ function shouldRejectCapturedMemory(
     return true;
   }
 
-  const categories = new Set((memory.categories || []).map((item) => String(item || '').toLowerCase()));
-  const looksLikePreference = categories.has('preference');
-  const assistantSimilarity = similarityScore(memoryText, latestAssistantMessage);
-  const userSimilarity = similarityScore(memoryText, latestUserMessage);
-  const supportedByAssistantOnly = Boolean(
-    looksLikePreference &&
-    latestAssistantMessage &&
-    assistantSimilarity >= 0.5 &&
-    userSimilarity < 0.4,
-  );
-
-  return supportedByAssistantOnly;
+  return false;
 }
 
 function inferRejectReason(
@@ -128,16 +116,7 @@ function inferRejectReason(
   if (memoryText && latestUserMessage && memoryText === latestUserMessage) {
     return 'query_echo';
   }
-  return 'assistant_only_preference';
-}
-
-function similarityScore(left: string, right: string): number {
-  if (!left || !right) {
-    return 0;
-  }
-
-  const common = longestCommonSubstringLength(left, right);
-  return common / Math.max(Math.min(left.length, right.length), 1);
+  return 'empty';
 }
 
 function toMemoryPayload(

@@ -188,7 +188,7 @@ test('capture sync rejects query-echo memories that only restate the latest user
   }
 });
 
-test('capture sync rejects preference memories supported only by assistant output', async () => {
+test('capture sync keeps preference memories even when wording is closer to assistant output', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'capture-sync-'));
 
   try {
@@ -208,8 +208,8 @@ test('capture sync rejects preference memories supported only by assistant outpu
       },
     });
 
-    assert.equal(result.synced, 0);
-    assert.equal((await adapter.listMemories({ userId: 'user-1' })).length, 0);
+    assert.equal(result.synced, 1);
+    assert.equal((await adapter.listMemories({ userId: 'user-1' })).length, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
