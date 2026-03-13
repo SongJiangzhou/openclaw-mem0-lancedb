@@ -8,6 +8,11 @@ const LCS_SCALE = 2.5;
 const BIGRAM_SCALE = 1.5;
 const QUERY_ECHO_PENALTY = 3;
 const OPERATIONAL_NOISE_PENALTY = 2.5;
+const CURRENT_TEMPORAL_BONUS = 0.8;
+const RECENT_TEMPORAL_BONUS = 0.45;
+const HISTORICAL_TEMPORAL_PENALTY = 0.35;
+const USER_EXPLICIT_BONUS = 0.4;
+const ASSISTANT_INFERRED_PENALTY = 0.15;
 
 export interface RecallReranker {
   rerank(memories: SearchResult['memories'], query: string): Promise<SearchResult['memories']>;
@@ -21,7 +26,8 @@ export function createLocalRecallReranker(): RecallReranker {
       return [...memories]
         .map((memory, index) => ({
           memory,
-          score: computeRecallScore(memory.text, normalizedQuery, index, memories.length),
+          score: computeRecallScore(memory.text, normalizedQuery, index, memories.length)
+            + computeSemanticBlendScore(memory),
         }))
         .sort((left, right) => right.score - left.score)
         .map((entry) => entry.memory);
@@ -56,7 +62,7 @@ export function createRecallReranker(
     async rerank(memories, query) {
       try {
         const ranked = await rerankWithVoyage(memories, query, config, fetchFn);
-        return ranked;
+        return applyFinalBlend(ranked);
       } catch (error) {
         recallLogger.exception('memory_reranker.remote_failed', error, {
           provider: config.provider,
@@ -88,7 +94,7 @@ async function rerankWithVoyage(
     body: JSON.stringify({
       model: config.model || 'rerank-2.5-lite',
       query,
-      documents: memories.map((memory) => memory.text),
+      documents: memories.map((memory) => buildSemanticRerankDocument(memory)),
     }),
   });
 
@@ -119,6 +125,66 @@ async function rerankWithVoyage(
   });
 
   return reranked;
+}
+
+function applyFinalBlend(memories: SearchResult['memories']): SearchResult['memories'] {
+  return [...memories]
+    .map((memory, index, items) => ({
+      memory,
+      score: ((items.length - index) / Math.max(items.length, 1)) + computeSemanticBlendScore(memory),
+    }))
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.memory);
+}
+
+function buildSemanticRerankDocument(memory: SearchResult['memories'][number]): string {
+  const temporalHint = deriveTemporalHint(memory);
+  const memoryType = memory.memory_type || 'generic';
+  const domain = Array.isArray(memory.domains) && memory.domains.length > 0 ? memory.domains[0] : 'generic';
+  const sourceKind = memory.source_kind || 'assistant_inferred';
+  return `memory_type=${memoryType}; domain=${domain}; source=${sourceKind}; recency=${temporalHint}; text=${memory.text}`;
+}
+
+function computeSemanticBlendScore(memory: SearchResult['memories'][number]): number {
+  let score = 0;
+  const temporalHint = deriveTemporalHint(memory);
+
+  if (memory.source_kind === 'user_explicit') {
+    score += USER_EXPLICIT_BONUS;
+  } else if (memory.source_kind === 'assistant_inferred') {
+    score -= ASSISTANT_INFERRED_PENALTY;
+  }
+
+  if (temporalHint === 'current') {
+    score += CURRENT_TEMPORAL_BONUS;
+  } else if (temporalHint === 'recent') {
+    score += RECENT_TEMPORAL_BONUS;
+  } else if (temporalHint === 'historical') {
+    score -= HISTORICAL_TEMPORAL_PENALTY;
+  }
+
+  return score;
+}
+
+function deriveTemporalHint(memory: SearchResult['memories'][number]): 'current' | 'recent' | 'older' | 'historical' {
+  const rawTs = memory.last_access_ts || memory.ts_event;
+  const timestamp = rawTs ? new Date(rawTs).getTime() : NaN;
+  if (!Number.isFinite(timestamp)) {
+    return 'older';
+  }
+
+  const ageDays = Math.max(0, (Date.now() - timestamp) / (1000 * 60 * 60 * 24));
+
+  if (memory.lifecycle_state === 'reinforced' || ageDays <= 3) {
+    return 'current';
+  }
+  if (ageDays <= 30) {
+    return 'recent';
+  }
+  if (ageDays <= 180) {
+    return 'older';
+  }
+  return 'historical';
 }
 
 function computeRecallScore(text: string, normalizedQuery: string, index: number, total: number): number {

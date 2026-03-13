@@ -261,6 +261,34 @@ test('runAutoRecall reranks lowercase english entity queries without stopword st
   assert.doesNotMatch(result.block, /KFC egg tarts/);
 });
 
+test('runAutoRecall prefers current explicit preferences over older inferred alternatives', async () => {
+  const result = await runAutoRecall({
+    query: 'What do I prefer now?',
+    userId: 'user-1',
+    config: buildConfig({ topK: 1, maxChars: 220 }),
+    search: async () => ({
+      memories: [
+        buildMemory('User used to like beef burgers', 'long-term', {
+          ts_event: '2025-01-01T12:00:00.000Z',
+          last_access_ts: '2025-01-02T12:00:00.000Z',
+          source_kind: 'assistant_inferred',
+          confidence: 0.55,
+        }),
+        buildMemory('User now prefers grilled chicken burgers', 'long-term', {
+          ts_event: '2026-03-13T12:00:00.000Z',
+          last_access_ts: '2026-03-13T12:00:00.000Z',
+          source_kind: 'user_explicit',
+          confidence: 0.95,
+        }),
+      ],
+      source: 'lancedb',
+    }),
+  });
+
+  assert.match(result.block, /User now prefers grilled chicken burgers/);
+  assert.doesNotMatch(result.block, /User used to like beef burgers/);
+});
+
 test('runAutoRecall downranks query echo memories', async () => {
   const result = await runAutoRecall({
     query: 'What do I like at McDonalds?',

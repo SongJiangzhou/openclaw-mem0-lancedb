@@ -106,7 +106,8 @@ export async function runAutoRecall(params: {
   }
 
   const reranker = params.reranker || createLocalRecallReranker();
-  const selectedMemories = await reranker.rerank(result.memories, params.query);
+  const rerankedMemories = await reranker.rerank(result.memories, params.query);
+  const selectedMemories = applyQueryAwareFinalBlend(rerankedMemories, params.query);
   const block = buildAutoRecallBlock(selectedMemories, params.config, result.source);
   params.debug?.basic('auto_recall.done', {
     source: result.source,
@@ -153,4 +154,37 @@ function mergeRecallSearchResults(results: SearchResult[], variants: ReturnType<
       .sort((left, right) => right.score - left.score)
       .map((entry) => entry.memory),
   };
+}
+
+function applyQueryAwareFinalBlend(
+  memories: SearchResult['memories'],
+  query: string,
+): SearchResult['memories'] {
+  const normalizedQuery = normalizeText(query);
+
+  return [...memories]
+    .map((memory, index, items) => ({
+      memory,
+      score:
+        ((items.length - index) / Math.max(items.length, 1))
+        + computeQueryAwareBlendScore(memory, normalizedQuery),
+    }))
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.memory);
+}
+
+function computeQueryAwareBlendScore(
+  memory: SearchResult['memories'][number],
+  normalizedQuery: string,
+): number {
+  const text = normalizeText(memory.text);
+  if (!normalizedQuery || !text) {
+    return 0;
+  }
+
+  return text === normalizedQuery ? -3 : 0;
+}
+
+function normalizeText(value: string): string {
+  return String(value || '').trim().toLowerCase();
 }
