@@ -1,11 +1,12 @@
 import { embed } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
+import { PluginDebugLogger, type PluginLogger } from '../debug/logger';
 import type { EmbeddingConfig } from '../types';
 
 export const FAKE_EMBEDDING_DIM = 16;
 
-export async function embedText(text: string, cfg?: EmbeddingConfig): Promise<number[]> {
+export async function embedText(text: string, cfg?: EmbeddingConfig, logger?: PluginLogger): Promise<number[]> {
   const normalized = String(text || '').trim();
   if (!normalized) {
     return new Array<number>(cfg?.dimension || FAKE_EMBEDDING_DIM).fill(0);
@@ -24,7 +25,8 @@ export async function embedText(text: string, cfg?: EmbeddingConfig): Promise<nu
     const { embedding } = await embed({ model, value: normalized });
     return embedding;
   } catch (err) {
-    console.error(`[embedder] Failed to fetch ${cfg.provider} embedding:`, err);
+    (logger || new PluginDebugLogger({ mode: 'off' }).child('memory.embedder'))
+      .exception('memory_embedder.fetch_failed', err, { provider: cfg.provider });
     throw err;
   }
 }

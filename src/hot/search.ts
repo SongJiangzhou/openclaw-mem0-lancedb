@@ -6,6 +6,7 @@ import { buildMemoryDedupKeys } from '../memory/dedup';
 import { backfillLifecycleFields, isRecallEligibleLifecycleState } from '../memory/lifecycle';
 import { classifyQueryDomain, classifyQueryIntent, inferMemoryAnnotations, looksLikeCredentialQuery } from '../memory/typing';
 import { deriveRecallSizing } from '../recall/sizing';
+import { PluginDebugLogger, type PluginLogger } from '../debug/logger';
 import type { MemoryDomain, MemoryRecord, PluginConfig, SearchParams, SearchResult } from '../types';
 
 const RRF_K = 60;
@@ -33,9 +34,11 @@ const SOURCE_KIND_WEIGHT: Record<string, number> = {
 
 export class HotMemorySearch {
   private readonly config: PluginConfig;
+  private readonly logger: PluginLogger;
 
-  constructor(config: PluginConfig) {
+  constructor(config: PluginConfig, logger?: PluginLogger) {
     this.config = config;
+    this.logger = logger || new PluginDebugLogger(config.debug).child('memory.hot_search');
   }
 
   async search(params: SearchParams): Promise<SearchResult> {
@@ -109,7 +112,7 @@ export class HotMemorySearch {
           finalRows = mmrSelected.slice(0, topK);
         }
       } catch (error) {
-        console.warn('[hot/search] MMR query embedding failed, falling back to ranked rows:', this.describeError(error));
+        this.logger.exception('memory_hot_search.mmr_fallback', error, { query });
         finalRows = ranked.slice(0, topK);
       }
     } else {
@@ -202,26 +205,21 @@ export class HotMemorySearch {
         .limit(topK)
         .toArray();
     } catch (error) {
-      console.warn('[hot/search] Vector search skipped because query embedding failed:', this.describeError(error));
+      this.logger.exception('memory_hot_search.vector_search_failed', error, {
+        topK,
+        hasQueryVector: true,
+      });
       return [];
     }
   }
 
   private async getQueryVector(query: string): Promise<number[] | null> {
     try {
-      return await embedText(query, this.config.embedding);
+      return await embedText(query, this.config.embedding, this.logger.child('embedder'));
     } catch (error) {
-      console.warn('[hot/search] Query embedding failed:', this.describeError(error));
+      this.logger.exception('memory_hot_search.query_embedding_failed', error, { query });
       return null;
     }
-  }
-
-  private describeError(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
-    }
-
-    return String(error);
   }
 
   private mergeRrf(ftsRows: any[], vectorRows: any[], topK: number): any[] {

@@ -137,6 +137,12 @@ export class ToolName {
 - Boundary-level exception logs must be added before the code continues with fallback, retry, partial success, or empty-result behavior.
 - This rule applies to new and modified code. It does not imply the whole repository is already fully aligned.
 
+## Logging Rule
+
+- Business modules should not use direct `console.*` calls. Prefer the unified logger module.
+- New and modified runtime code should use structured logger events instead of hand-built console strings.
+- Avoid large amounts of low-value logs. Log exceptions, fallbacks, retries, major state changes, and important branch decisions only.
+
 ## Key Dependencies
 
 - `@lancedb/lancedb`: Vector database for local memory storage

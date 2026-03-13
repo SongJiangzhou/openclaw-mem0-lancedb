@@ -1,4 +1,5 @@
 import type { RecallRerankerConfig, SearchResult } from '../types';
+import { PluginDebugLogger, type PluginLogger } from '../debug/logger';
 import { stripPunctuation, longestCommonSubstringLength } from '../memory/text-utils';
 
 const BASE_RANK_SCALE = 1;
@@ -31,6 +32,7 @@ export function createLocalRecallReranker(): RecallReranker {
 export function createRecallReranker(
   config?: RecallRerankerConfig,
   fetchFn: typeof fetch = fetch,
+  logger?: PluginLogger,
 ): RecallReranker {
   if (!config || config.provider === 'local') {
     return createLocalRecallReranker();
@@ -49,13 +51,17 @@ export function createRecallReranker(
   }
 
   const localFallback = createLocalRecallReranker();
+  const recallLogger = logger || new PluginDebugLogger({ mode: 'off' }).child('memory.reranker');
   return {
     async rerank(memories, query) {
       try {
         const ranked = await rerankWithVoyage(memories, query, config, fetchFn);
         return ranked;
       } catch (error) {
-        console.warn('[recall] Voyage reranker failed, falling back to local reranker:', error);
+        recallLogger.exception('memory_reranker.remote_failed', error, {
+          provider: config.provider,
+          memoryCount: memories.length,
+        });
         return localFallback.rerank(memories, query);
       }
     },

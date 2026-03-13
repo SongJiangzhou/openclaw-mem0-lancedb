@@ -2,6 +2,7 @@ import { HotMemorySearch } from '../hot/search';
 import { hasMem0Auth } from '../control/auth';
 import { HttpMem0Client } from '../control/mem0';
 import { buildMemoryDedupKeys } from '../memory/dedup';
+import { PluginDebugLogger, type PluginLogger } from '../debug/logger';
 import { getScopedMemoryIdentity } from '../memory/user-space';
 import { classifyQueryDomain, classifyQueryIntent } from '../memory/typing';
 import type { MemoryDomain, PluginConfig, SearchParams, SearchResult } from '../types';
@@ -9,10 +10,12 @@ import type { MemoryDomain, PluginConfig, SearchParams, SearchResult } from '../
 export class MemorySearchTool {
   private readonly config: PluginConfig;
   private readonly hotSearch: HotMemorySearch;
+  private readonly logger: PluginLogger;
 
-  constructor(config: PluginConfig) {
+  constructor(config: PluginConfig, logger?: PluginLogger) {
     this.config = config;
-    this.hotSearch = new HotMemorySearch(config);
+    this.logger = logger || new PluginDebugLogger(config.debug).child('memory.search');
+    this.hotSearch = new HotMemorySearch(config, this.logger.child('hot_search'));
   }
 
   async execute(params: SearchParams): Promise<SearchResult> {
@@ -36,13 +39,11 @@ export class MemorySearchTool {
         filters,
       });
     } catch (err) {
-      this.logStructuredException('memory_search.local_failed', {
+      this.logger.exception('memory_search.local_failed', err, {
         query,
         topK,
         localCount: 0,
         mem0Mode: this.config.mem0Mode,
-        message: err instanceof Error ? err.message : String(err),
-        cause: err instanceof Error && err.cause ? String(err.cause) : undefined,
       });
     }
 
@@ -55,21 +56,18 @@ export class MemorySearchTool {
         const remote = await this.searchMem0Enhanced(query, identity.userId, topK, filters, intent);
         return this.mergeLocalAndRemote(localResult, remote, topK);
       } catch (err) {
-        this.logStructuredException('memory_search.mem0_fallback_failed', {
+        this.logger.exception('memory_search.mem0_fallback_failed', err, {
           query,
           topK,
           localCount: localResult.memories.length,
           mem0Mode: this.config.mem0Mode,
-          message: err instanceof Error ? err.message : String(err),
-          cause: err instanceof Error && err.cause ? String(err.cause) : undefined,
         });
-        console.warn(JSON.stringify({
-          event: 'memory_search.returning_local_after_fallback_failure',
+        this.logger.warn('memory_search.returning_local_after_fallback_failure', {
           query,
           topK,
           localCount: localResult.memories.length,
           mem0Mode: this.config.mem0Mode,
-        }));
+        });
         return localResult;
       }
     }
@@ -81,20 +79,14 @@ export class MemorySearchTool {
     try {
       return await this.searchMem0Enhanced(query, identity.userId, topK, filters, intent);
     } catch (err) {
-      this.logStructuredException('memory_search.mem0_fallback_failed', {
+      this.logger.exception('memory_search.mem0_fallback_failed', err, {
         query,
         topK,
         localCount: 0,
         mem0Mode: this.config.mem0Mode,
-        message: err instanceof Error ? err.message : String(err),
-        cause: err instanceof Error && err.cause ? String(err.cause) : undefined,
       });
       return { memories: [], source: 'none' };
     }
-  }
-
-  private logStructuredException(event: string, fields: Record<string, unknown>): void {
-    console.error(JSON.stringify({ event, fields }));
   }
 
   private async searchMem0Enhanced(

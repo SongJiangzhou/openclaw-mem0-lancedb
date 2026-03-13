@@ -2,7 +2,7 @@ import * as lancedb from '@lancedb/lancedb';
 import { clearDbCacheForPath, getTableSchemaFields, openMemoryTable, openMemoryTableByName, sanitizeRecordsForSchema } from '../db/table';
 import { existsSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import * as path from 'node:path';
-import type { PluginDebugLogger } from '../debug/logger';
+import { PluginDebugLogger, type PluginLogger } from '../debug/logger';
 import { embedText } from './embedder';
 import { discoverMemoryTables, resolveLanceDbPath } from './table-discovery';
 import { backfillLifecycleFields } from '../memory/lifecycle';
@@ -42,15 +42,15 @@ type MigrationBatchResult = {
 
 export class EmbeddingMigrationWorker {
   private readonly config: PluginConfig;
-  private readonly debug?: PluginDebugLogger;
+  private readonly debug: PluginLogger;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private loopEnabled = false;
   private lastEmbeddingAttemptAt = 0;
 
-  constructor(config: PluginConfig, debug?: PluginDebugLogger) {
+  constructor(config: PluginConfig, debug?: PluginLogger) {
     this.config = config;
-    this.debug = debug;
+    this.debug = debug || new PluginDebugLogger(config.debug).child('memory.embedding_migration');
   }
 
   start(intervalMs: number = this.getMigrationConfig().intervalMs): void {
@@ -100,7 +100,7 @@ export class EmbeddingMigrationWorker {
   }
 
   protected async requestEmbedding(text: string): Promise<number[]> {
-    return embedText(text, this.config.embedding);
+    return embedText(text, this.config.embedding, this.debug.child('embedder'));
   }
 
   protected async sleep(ms: number): Promise<void> {
@@ -141,10 +141,7 @@ export class EmbeddingMigrationWorker {
   }
 
   private handleLoopError(error: unknown): void {
-    this.debug?.error('embedding_migration.loop_error', {
-      message: error instanceof Error ? error.message : String(error),
-    });
-    console.error('[EmbeddingMigrationWorker] Migration loop failed:', error);
+    this.debug.exception('embedding_migration.loop_error', error);
   }
 
   private async runOnceWithResult(): Promise<MigrationBatchResult> {
@@ -177,11 +174,11 @@ export class EmbeddingMigrationWorker {
     let retryableFailures = 0;
 
     if (legacyTables.length === 0) {
-      this.debug?.basic('embedding_migration.skipped', { reason: 'no_legacy_tables' });
+      this.debug.basic('embedding_migration.skipped', { reason: 'no_legacy_tables' });
       return { migrated, failed, legacyTables: 0, retryableFailures };
     }
 
-    this.debug?.basic('embedding_migration.start', { sourceTables: legacyTables.length, targetDimension: currentDim, batchSize });
+    this.debug.basic('embedding_migration.start', { sourceTables: legacyTables.length, targetDimension: currentDim, batchSize });
 
     let remaining = batchSize;
     for (const tableInfo of legacyTables) {
@@ -215,24 +212,18 @@ export class EmbeddingMigrationWorker {
           await sourceTable.delete(`memory_uid = '${escapeSqlString(String(row.memory_uid || ''))}'`);
           remaining -= 1;
           migrated += 1;
-          this.debug?.verbose('embedding_migration.row', { memoryUid: String(row.memory_uid || ''), sourceDimension: tableInfo.dimension, targetDimension: currentDim });
+          this.debug.verbose('embedding_migration.row', { memoryUid: String(row.memory_uid || ''), sourceDimension: tableInfo.dimension, targetDimension: currentDim });
         } catch (err) {
           failed += 1;
           const isRateLimit = isRetryableRateLimitError(err);
           if (isRateLimit) {
             retryableFailures += 1;
           }
-          this.debug?.error('embedding_migration.error', {
+          this.debug.exception('embedding_migration.error', err, {
             memoryUid: String(row.memory_uid || ''),
             sourceDimension: tableInfo.dimension,
             targetDimension: currentDim,
-            message: err instanceof Error ? err.message : String(err),
           });
-          console.error(
-            `[EmbeddingMigrationWorker] Failed to migrate memory_uid=${String(row.memory_uid || '')} `
-            + `from d${tableInfo.dimension} to d${currentDim}:`,
-            err,
-          );
 
           if (isRateLimit) {
             remaining = 0;
@@ -244,7 +235,7 @@ export class EmbeddingMigrationWorker {
       await this.backupLegacyTableIfEmpty(tableInfo.name, sourceTable);
     }
 
-    this.debug?.basic('embedding_migration.done', { migrated, failed, targetDimension: currentDim });
+    this.debug.basic('embedding_migration.done', { migrated, failed, targetDimension: currentDim });
     return { migrated, failed, legacyTables: legacyTables.length, retryableFailures };
   }
 
@@ -262,7 +253,7 @@ export class EmbeddingMigrationWorker {
 
         const delayMs = EMBEDDING_429_BASE_BACKOFF_MS * (2 ** retryCount);
         retryCount += 1;
-        this.debug?.warn('embedding_migration.retry_backoff', {
+        this.debug.warn('embedding_migration.retry_backoff', {
           retryCount,
           delayMs,
           message: error instanceof Error ? error.message : String(error),

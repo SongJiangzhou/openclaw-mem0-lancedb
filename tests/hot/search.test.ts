@@ -7,6 +7,7 @@ import test from 'node:test';
 import { MemoryStoreTool } from '../../src/tools/store';
 import { HotMemorySearch } from '../../src/hot/search';
 import { openMemoryTable } from '../../src/db/table';
+import { PluginDebugLogger } from '../../src/debug/logger';
 import * as embedder from '../../src/hot/embedder';
 import * as tableDiscovery from '../../src/hot/table-discovery';
 import * as dbTable from '../../src/db/table';
@@ -304,53 +305,53 @@ test('hot plane search logs embedding failures and falls back to ranked rows', {
       embedding: { provider: 'voyage-invalid' as any, baseUrl: '', apiKey: '', model: '', dimension: 16 },
     };
     const tbl = await openMemoryTable(dir, 16);
-    const hot = new HotMemorySearch(cfg);
-    const warnings: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args.map(String).join(' '));
-    };
+    const logs: string[] = [];
+    const logger = new PluginDebugLogger(
+      { mode: 'debug' },
+      {
+        info: (msg: string) => logs.push(msg),
+        warn: (msg: string) => logs.push(msg),
+        error: (msg: string) => logs.push(msg),
+      },
+    );
+    const hot = new HotMemorySearch(cfg, logger.child('memory.hot_search'));
 
-    try {
-      await tbl.add([{
-        memory_uid: 'fallback-1',
-        user_id: 'default',
-        run_id: '',
-        scope: 'long-term',
-        text: 'User prefers grilled chicken burgers at McDonalds',
-        categories: ['preference'],
-        tags: [],
-        memory_type: 'preference',
-        domains: ['food'],
-        source_kind: 'user_explicit',
-        confidence: 0.9,
-        ts_event: '2026-03-11T00:00:00.000Z',
-        source: 'openclaw',
-        status: 'active',
-        sensitivity: 'internal',
-        openclaw_refs: '{}',
-        mem0_id: '',
-        mem0_event_id: '',
-        mem0_hash: '',
-        lancedb_row_key: 'fallback-1',
-        vector: new Array(16).fill(0.3),
-      }]);
+    await tbl.add([{
+      memory_uid: 'fallback-1',
+      user_id: 'default',
+      run_id: '',
+      scope: 'long-term',
+      text: 'User prefers grilled chicken burgers at McDonalds',
+      categories: ['preference'],
+      tags: [],
+      memory_type: 'preference',
+      domains: ['food'],
+      source_kind: 'user_explicit',
+      confidence: 0.9,
+      ts_event: '2026-03-11T00:00:00.000Z',
+      source: 'openclaw',
+      status: 'active',
+      sensitivity: 'internal',
+      openclaw_refs: '{}',
+      mem0_id: '',
+      mem0_event_id: '',
+      mem0_hash: '',
+      lancedb_row_key: 'fallback-1',
+      vector: new Array(16).fill(0.3),
+    }]);
 
-      const result = await hot.search({
-        query: 'McDonalds',
-        userId: 'default',
-        topK: 5,
-        filters: { scope: 'long-term' },
-      });
+    const result = await hot.search({
+      query: 'McDonalds',
+      userId: 'default',
+      topK: 5,
+      filters: { scope: 'long-term' },
+    });
 
-      assert.equal(result.source, 'lancedb');
-      assert.ok(result.memories.length >= 1);
-      assert.match(result.memories[0]?.text || '', /McDonalds/);
-      assert.ok(warnings.some((line) => line.includes('Query embedding failed')));
-      assert.ok(warnings.some((line) => line.includes('MMR query embedding failed')));
-    } finally {
-      console.warn = originalWarn;
-    }
+    assert.equal(result.source, 'lancedb');
+    assert.ok(result.memories.length >= 1);
+    assert.match(result.memories[0]?.text || '', /McDonalds/);
+    assert.ok(logs.some((line) => line.includes('"event":"memory_hot_search.query_embedding_failed"')));
+    assert.ok(logs.some((line) => line.includes('"event":"memory_hot_search.mmr_fallback"')));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

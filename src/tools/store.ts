@@ -8,17 +8,17 @@ import { HttpMem0Client } from '../control/mem0';
 import { backfillLifecycleFields } from '../memory/lifecycle';
 import { getScopedMemoryIdentity } from '../memory/user-space';
 import { sanitizeMemoryText } from '../capture/security';
-import { PluginDebugLogger, summarizeText } from '../debug/logger';
+import { PluginDebugLogger, summarizeText, type PluginLogger } from '../debug/logger';
 import { inferMemoryAnnotations } from '../memory/typing';
 import type { MemorySyncPayload, PluginConfig, StoreParams, StoreResult } from '../types';
 
 export class MemoryStoreTool {
   private config: PluginConfig;
-  private readonly debug: PluginDebugLogger;
+  private readonly debug: PluginLogger;
 
-  constructor(config: PluginConfig, debug?: PluginDebugLogger) {
+  constructor(config: PluginConfig, debug?: PluginLogger) {
     this.config = config;
-    this.debug = debug || new PluginDebugLogger(config.debug);
+    this.debug = debug || new PluginDebugLogger(config.debug).child('memory.store');
   }
 
   async execute(params: StoreParams): Promise<StoreResult> {
@@ -68,8 +68,10 @@ export class MemoryStoreTool {
       this.debug.basic('memory_store.done', { success: false, memoryUid: result.memory_uid, eventId, syncStatus: result.status });
       return { success: false, memoryUid: result.memory_uid, eventId, syncStatus: result.status, error: result.status };
     } catch (err: any) {
-      this.debug.error('memory_store.error', { message: err.message || 'Unknown error' });
-      console.error('[memoryStore] Failed:', err);
+      this.debug.exception('memory_store.error', err, {
+        scope,
+        categories: categories.length,
+      });
       return { success: false, error: err.message || 'Unknown error' };
     }
   }

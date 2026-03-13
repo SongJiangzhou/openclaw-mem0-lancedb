@@ -1,7 +1,7 @@
 import type { MemoryDomain, MemoryRecord, MemoryType, PluginConfig } from '../types';
 import type { AutoCapturePayload } from '../capture/auto';
 import { hasMem0Auth, buildMem0Headers } from './auth';
-import { summarizeText, type PluginDebugLogger } from '../debug/logger';
+import { summarizeText, type PluginLogger } from '../debug/logger';
 
 export type Mem0StoreResult =
   | { status: 'submitted'; mem0_id: string | null; event_id: string | null; hash: string | null; extractedMemories?: Mem0ExtractedMemory[] }
@@ -59,9 +59,9 @@ export interface Mem0Client {
 export class HttpMem0Client implements Mem0Client {
   private readonly config: PluginConfig;
   private readonly fetchImpl: typeof fetch;
-  private readonly debug?: PluginDebugLogger;
+  private readonly debug?: PluginLogger;
 
-  constructor(config: PluginConfig, fetchImpl: typeof fetch = fetch, debug?: PluginDebugLogger) {
+  constructor(config: PluginConfig, fetchImpl: typeof fetch = fetch, debug?: PluginLogger) {
     this.config = config;
     this.fetchImpl = fetchImpl;
     this.debug = debug;

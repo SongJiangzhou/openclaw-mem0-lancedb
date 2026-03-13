@@ -1,7 +1,7 @@
 import { LanceDbMemoryAdapter, type MemoryAdapter } from './adapter';
 import { FileAuditStore } from '../audit/store';
 import { hasMem0Auth, buildMem0Headers } from '../control/auth';
-import type { PluginDebugLogger } from '../debug/logger';
+import { PluginDebugLogger, type PluginLogger } from '../debug/logger';
 import { backfillLifecycleFields } from '../memory/lifecycle';
 import { payloadToRecord } from '../memory/mapper';
 import { inferMemoryAnnotations } from '../memory/typing';
@@ -11,14 +11,14 @@ import type { PluginConfig } from '../types';
 export class Mem0Poller {
   private timer: NodeJS.Timeout | null = null;
   private readonly config: PluginConfig;
-  private readonly debug?: PluginDebugLogger;
+  private readonly debug: PluginLogger;
   private readonly auditStore?: FileAuditStore;
   private readonly adapter?: MemoryAdapter;
   private lastSyncTime: string;
 
-  constructor(config: PluginConfig, debug?: PluginDebugLogger, auditStore?: FileAuditStore, adapter?: MemoryAdapter) {
+  constructor(config: PluginConfig, debug?: PluginLogger, auditStore?: FileAuditStore, adapter?: MemoryAdapter) {
     this.config = config;
-    this.debug = debug;
+    this.debug = debug || new PluginDebugLogger(config.debug).child('memory.poller');
     this.auditStore = auditStore;
     this.adapter = adapter;
     this.lastSyncTime = new Date().toISOString();
@@ -42,12 +42,12 @@ export class Mem0Poller {
 
   async poll() {
     if (!hasMem0Auth(this.config) || !this.config.mem0BaseUrl) {
-      this.debug?.basic('mem0_poller.skipped', { reason: 'mem0_unavailable' });
+      this.debug.basic('mem0_poller.skipped', { reason: 'mem0_unavailable' });
       return;
     }
 
     try {
-      this.debug?.basic('mem0_poller.start', { baseUrl: this.config.mem0BaseUrl, mode: this.config.mem0Mode });
+      this.debug.basic('mem0_poller.start', { baseUrl: this.config.mem0BaseUrl, mode: this.config.mem0Mode });
       const url = new URL(`${this.config.mem0BaseUrl}/v1/memories/`);
       url.searchParams.set('user_id', resolveSharedUserId());
 
@@ -62,7 +62,7 @@ export class Mem0Poller {
 
       const data: any = await response.json();
       const memories = Array.isArray(data) ? data : Array.isArray(data.results) ? data.results : Array.isArray(data.items) ? data.items : [];
-      this.debug?.basic('mem0_poller.fetched', { count: memories.length });
+      this.debug.basic('mem0_poller.fetched', { count: memories.length });
 
       const adapter = this.adapter || new LanceDbMemoryAdapter(this.config.lancedbPath, this.config.embedding);
       let synced = 0;
@@ -119,13 +119,15 @@ export class Mem0Poller {
           memory: payload,
         });
         synced += 1;
-        this.debug?.verbose('mem0_poller.synced_memory', { memoryUid: targetMemoryUid });
+        this.debug.verbose('mem0_poller.synced_memory', { memoryUid: targetMemoryUid });
       }
       this.lastSyncTime = new Date().toISOString();
-      this.debug?.basic('mem0_poller.done', { fetched: memories.length, synced });
+      this.debug.basic('mem0_poller.done', { fetched: memories.length, synced });
     } catch (err) {
-      this.debug?.error('mem0_poller.error', { message: err instanceof Error ? err.message : String(err) });
-      console.error('[Mem0Poller] Poll failed:', err);
+      this.debug.exception('mem0_poller.error', err, {
+        baseUrl: this.config.mem0BaseUrl,
+        mode: this.config.mem0Mode,
+      });
     }
   }
 }

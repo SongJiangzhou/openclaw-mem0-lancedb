@@ -86,3 +86,53 @@ test('debug logger writes dated log files in the fixed workspace log directory',
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('debug logger child appends component and base fields', async () => {
+  const messages: string[] = [];
+  const logger = new PluginDebugLogger(
+    { mode: 'debug' },
+    {
+      info: (msg: string) => messages.push(msg),
+      warn: (msg: string) => messages.push(msg),
+      error: (msg: string) => messages.push(msg),
+    },
+  );
+
+  const child = logger.child('memory.search', { feature: 'fallback' });
+  child.warn('memory_search.partial', { localCount: 2 });
+
+  assert.equal(messages.length, 1);
+  const payload = JSON.parse(messages[0] || '{}');
+  assert.equal(payload.event, 'memory_search.partial');
+  assert.equal(payload.fields.component, 'memory.search');
+  assert.equal(payload.fields.feature, 'fallback');
+  assert.equal(payload.fields.localCount, 2);
+});
+
+test('debug logger exception serializes error details and contextual fields', async () => {
+  const messages: string[] = [];
+  const logger = new PluginDebugLogger(
+    { mode: 'debug' },
+    {
+      info: (msg: string) => messages.push(msg),
+      warn: (msg: string) => messages.push(msg),
+      error: (msg: string) => messages.push(msg),
+    },
+  );
+
+  const cause = new Error('socket hang up');
+  const error = new Error('mem0 search failed', { cause });
+  logger.exception('memory_search.mem0_fallback_failed', error, {
+    query: 'sparkling water',
+    topK: 5,
+  });
+
+  assert.equal(messages.length, 1);
+  const payload = JSON.parse(messages[0] || '{}');
+  assert.equal(payload.level, 'error');
+  assert.equal(payload.event, 'memory_search.mem0_fallback_failed');
+  assert.equal(payload.fields.message, 'mem0 search failed');
+  assert.equal(payload.fields.cause, 'socket hang up');
+  assert.equal(payload.fields.query, 'sparkling water');
+  assert.equal(payload.fields.topK, 5);
+});

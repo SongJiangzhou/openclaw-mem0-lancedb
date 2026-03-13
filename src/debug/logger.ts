@@ -10,6 +10,16 @@ export interface PluginLoggerSink {
   error?: (msg: string) => void;
 }
 
+export interface PluginLogger {
+  basic(event: string, fields?: Record<string, unknown>): void;
+  verbose(event: string, fields?: Record<string, unknown>): void;
+  info(event: string, fields?: Record<string, unknown>): void;
+  warn(event: string, fields?: Record<string, unknown>): void;
+  error(event: string, fields?: Record<string, unknown>): void;
+  exception(event: string, error: unknown, fields?: Record<string, unknown>): void;
+  child(component: string, baseFields?: Record<string, unknown>): PluginLogger;
+}
+
 const TEXT_PREVIEW_LIMIT = 200;
 const REDACTED = '[redacted]';
 const LOCAL_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('sv-SE', {
@@ -31,10 +41,18 @@ const LOCAL_DATE_FORMATTER = new Intl.DateTimeFormat('sv-SE', {
 export class PluginDebugLogger {
   private readonly config: DebugConfig;
   private readonly sink?: PluginLoggerSink;
+  private readonly component?: string;
+  private readonly baseFields: Record<string, unknown>;
 
-  constructor(config?: DebugConfig, sink?: PluginLoggerSink) {
+  constructor(
+    config?: DebugConfig,
+    sink?: PluginLoggerSink,
+    options?: { component?: string; baseFields?: Record<string, unknown> },
+  ) {
     this.config = config || { mode: 'off' };
     this.sink = sink;
+    this.component = options?.component;
+    this.baseFields = options?.baseFields || {};
   }
 
   basic(event: string, fields?: Record<string, unknown>): void {
@@ -53,6 +71,14 @@ export class PluginDebugLogger {
     this.emit('info', event, fields);
   }
 
+  info(event: string, fields?: Record<string, unknown>): void {
+    if (this.config.mode === 'off') {
+      return;
+    }
+
+    this.emit('info', event, fields);
+  }
+
   warn(event: string, fields?: Record<string, unknown>): void {
     this.emit('warn', event, fields);
   }
@@ -61,12 +87,33 @@ export class PluginDebugLogger {
     this.emit('error', event, fields);
   }
 
+  exception(event: string, error: unknown, fields?: Record<string, unknown>): void {
+    const normalized = normalizeError(error);
+    this.emit('error', event, {
+      ...fields,
+      message: normalized.message,
+      ...(normalized.cause ? { cause: normalized.cause } : {}),
+      ...(normalized.code ? { code: normalized.code } : {}),
+    });
+  }
+
+  child(component: string, baseFields?: Record<string, unknown>): PluginLogger {
+    const mergedComponent = this.component ? `${this.component}.${component}` : component;
+    return new PluginDebugLogger(this.config, this.sink, {
+      component: mergedComponent,
+      baseFields: {
+        ...this.baseFields,
+        ...(baseFields || {}),
+      },
+    });
+  }
+
   private emit(level: 'info' | 'warn' | 'error', event: string, fields?: Record<string, unknown>): void {
     const payload = {
       ts: formatLocalTimestamp(new Date()),
       level,
       event,
-      fields: sanitizeFields(fields || {}),
+      fields: sanitizeFields(this.withContext(fields || {})),
     };
     const line = JSON.stringify(payload);
 
@@ -91,6 +138,14 @@ export class PluginDebugLogger {
     } catch {
       // Never let debug logging break the caller.
     }
+  }
+
+  private withContext(fields: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...(this.component ? { component: this.component } : {}),
+      ...this.baseFields,
+      ...fields,
+    };
   }
 }
 
@@ -132,4 +187,33 @@ function formatLocalTimestamp(value: Date): string {
   const offsetMins = String(absOffsetMinutes % 60).padStart(2, '0');
 
   return `${dateTime}${sign}${offsetHours}:${offsetMins}`;
+}
+
+function normalizeError(error: unknown): { message: string; cause?: string; code?: string } {
+  if (error instanceof Error) {
+    const maybeCode = (error as Error & { code?: unknown }).code;
+    const normalized: { message: string; cause?: string; code?: string } = {
+      message: error.message || String(error),
+    };
+
+    if (error.cause !== undefined) {
+      normalized.cause = stringifyUnknown(error.cause);
+    }
+
+    if (typeof maybeCode === 'string' && maybeCode) {
+      normalized.code = maybeCode;
+    }
+
+    return normalized;
+  }
+
+  return { message: stringifyUnknown(error) };
+}
+
+function stringifyUnknown(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message || String(value);
+  }
+
+  return String(value);
 }

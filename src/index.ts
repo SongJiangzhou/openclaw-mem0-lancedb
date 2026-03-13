@@ -171,8 +171,8 @@ function resolveEmbeddingConfig(raw?: Partial<PluginConfig>, apiConfig?: any): P
 export default function register(api: OpenClawApi) {
   const cfg = resolveConfig(api.pluginConfig, api.config);
   const debug = new PluginDebugLogger(cfg.debug, api.logger);
-  const customSearch = new MemorySearchTool(cfg);
-  const customStore = new MemoryStoreTool(cfg, debug);
+  const customSearch = new MemorySearchTool(cfg, debug.child('memory.search'));
+  const customStore = new MemoryStoreTool(cfg, debug.child('memory.store'));
   const customGet = new MemoryGetTool(cfg);
 
   debug.basic('plugin.register', {
@@ -230,12 +230,12 @@ export default function register(api: OpenClawApi) {
         action,
         tasks: {
           sync: async () => {
-            const poller = new Mem0Poller(cfg, debug, auditStore);
+            const poller = new Mem0Poller(cfg, debug.child('memory.poller'), auditStore);
             await poller.poll();
             return { synced: true };
           },
           migrate: async () => {
-            const migrationWorker = new EmbeddingMigrationWorker(cfg, debug);
+            const migrationWorker = new EmbeddingMigrationWorker(cfg, debug.child('memory.embedding_migration'));
             return migrationWorker.runOnce();
           },
           consolidate: async () => {
@@ -395,7 +395,7 @@ export default function register(api: OpenClawApi) {
         agentId: recallIdentity.agentId,
         config: cfg.autoRecall,
         debug,
-        reranker: createRecallReranker(cfg.autoRecall.reranker),
+        reranker: createRecallReranker(cfg.autoRecall.reranker, fetch, debug.child('memory.reranker')),
         search: (params) => customSearch.execute(params),
       });
 

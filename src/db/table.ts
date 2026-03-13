@@ -2,6 +2,7 @@ import * as lancedb from '@lancedb/lancedb';
 import { getMemoryTableName } from './schema';
 import * as os from 'os';
 import * as path from 'path';
+import { PluginDebugLogger } from '../debug/logger';
 import { initializeLifecycleFields } from '../memory/lifecycle';
 
 const dbCache = new Map<string, Promise<any>>();
@@ -85,7 +86,9 @@ export async function openMemoryTable(dbPath: string, dim: number = 16) {
     await tbl.createIndex('lifecycle_state'); // Scalar index
     await tbl.createIndex('retention_deadline'); // Scalar index
   } catch (err) {
-    console.warn('Index creation failed or already exists', err);
+    new PluginDebugLogger({ mode: 'off' })
+      .child('memory.db')
+      .exception('memory_db.index_creation_failed', err);
   }
 
   await ensureFtsIndex(tbl);
