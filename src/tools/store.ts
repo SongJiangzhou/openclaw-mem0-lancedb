@@ -43,7 +43,7 @@ export class MemoryStoreTool {
       const auditStore = new FileAuditStore(this.config.auditStorePath);
       const adapter = new LanceDbMemoryAdapter(this.config.lancedbPath, this.config.embedding);
       const mem0Client = new HttpMem0Client(this.config, fetch, this.debug);
-      const engine = new MemorySyncEngine(outbox, auditStore, adapter, mem0Client);
+      const engine = new MemorySyncEngine(outbox, auditStore, adapter, mem0Client, { debug: this.debug });
       const payload = this.buildPayload({
         text,
         userId: identity.userId,

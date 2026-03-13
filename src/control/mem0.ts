@@ -27,7 +27,7 @@ function mapExtractedMemories(items: any[]): Mem0ExtractedMemory[] {
   return items
     .map((item: any) => ({
       id: item.id || null,
-      text: item.memory || item.text || item.data?.memory || item.data?.text || '',
+      text: item.memory || item.text || item.previous_memory || item.data?.memory || item.data?.text || item.data?.previous_memory || '',
       categories: Array.isArray(item.categories)
         ? item.categories
         : Array.isArray(item.data?.categories)

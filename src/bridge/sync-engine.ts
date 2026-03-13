@@ -5,6 +5,7 @@ import { LanceDbMemoryAdapter, type MemoryAdapter } from './adapter';
 import type { FileOutbox } from './outbox';
 import { backfillLifecycleFields } from '../memory/lifecycle';
 import { payloadToRecord } from '../memory/mapper';
+import type { PluginLogger } from '../debug/logger';
 import type { MemorySyncPayload, MemorySyncResult } from '../types';
 
 export class MemorySyncEngine {
@@ -13,19 +14,21 @@ export class MemorySyncEngine {
   private readonly adapter: MemoryAdapter;
   private readonly mem0Client: Mem0Client;
   private readonly processInline: boolean;
+  private readonly debug?: PluginLogger;
 
   constructor(
     outbox: FileOutbox,
     auditStore: FileAuditStore | undefined,
     adapter: MemoryAdapter,
     mem0Client: Mem0Client,
-    options?: { processInline?: boolean },
+    options?: { processInline?: boolean; debug?: PluginLogger },
   ) {
     this.outbox = outbox;
     this.auditStore = auditStore;
     this.adapter = adapter;
     this.mem0Client = mem0Client;
     this.processInline = options?.processInline ?? true;
+    this.debug = options?.debug;
   }
 
   async processEvent(eventId: string, memory: MemorySyncPayload): Promise<MemorySyncResult> {
@@ -46,8 +49,11 @@ export class MemorySyncEngine {
     if (this.auditStore) {
       try {
         await this.auditStore.append(record);
-      } catch {
-        return { status: 'failed', memory_uid: memoryUid };
+      } catch (err) {
+        this.debug?.exception('memory_sync.audit_append_failed', err, {
+          eventId,
+          memoryUid,
+        });
       }
     }
 

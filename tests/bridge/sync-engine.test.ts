@@ -153,6 +153,29 @@ test('sync engine writes lancedb provenance into audit records', async () => {
   }
 });
 
+test('sync engine continues to lancedb when audit append fails', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sync-engine-audit-fail-'));
+
+  try {
+    const adapter = new InMemoryMemoryAdapter();
+    const outbox = new FileOutbox(join(dir, 'outbox.json'));
+    const mem0 = new FakeMem0Client({ status: 'unavailable' }, { status: 'unavailable' });
+    const auditStore = {
+      async append() {
+        throw new Error('EACCES');
+      },
+    } as unknown as FileAuditStore;
+    const engine = new MemorySyncEngine(outbox, auditStore, adapter, mem0);
+
+    const result = await engine.processEvent('evt-audit-fail', createMemory());
+
+    assert.equal(result.status, 'partial');
+    assert.equal(await adapter.exists(result.memory_uid), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('sync engine waits for mem0 confirmation with a non-zero retry window', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sync-engine-wait-'));
 

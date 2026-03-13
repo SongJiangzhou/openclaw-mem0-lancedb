@@ -82,7 +82,14 @@ export async function syncCapturedMemories(params: {
       lancedb: buildLancedbMetadata(params.adapter, memoryUid),
     });
     if (params.auditStore) {
-      await params.auditStore.append(record);
+      try {
+        await params.auditStore.append(record);
+      } catch (err) {
+        params.debug?.exception('capture_sync.audit_append_failed', err, {
+          eventId: params.eventId,
+          memoryUid,
+        });
+      }
     }
     await params.adapter.upsertMemory({
       memory_uid: memoryUid,

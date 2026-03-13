@@ -344,6 +344,42 @@ test('http mem0 client maps object results capture response as direct extracted 
   assert.equal(result.extractedMemories?.[0]?.hash, 'hash-coke');
 });
 
+test('http mem0 client maps object results capture response with previous_memory only', async () => {
+  const fetchStub = (async () => ({
+    ok: true,
+    json: async () => ({
+      results: [
+        {
+          id: 'mem_obj_2',
+          event: 'UPDATE',
+          previous_memory: 'User likes KFC popcorn chicken',
+        },
+      ],
+    }),
+  })) as unknown as typeof fetch;
+  const client = new HttpMem0Client(buildConfig(), fetchStub);
+  const payload = buildAutoCapturePayload({
+    userId: 'user-1',
+    latestUserMessage: 'I like KFC popcorn chicken',
+    latestAssistantMessage: 'Noted.',
+    config: {
+      enabled: true,
+      scope: 'long-term',
+      requireAssistantReply: true,
+      maxCharsPerMessage: 2000,
+    },
+  });
+
+  const result = await client.captureTurn(payload!);
+
+  assert.equal(result.status, 'submitted');
+  if (result.status !== 'submitted') {
+    return;
+  }
+  assert.equal(result.extractedMemories?.length, 1);
+  assert.equal(result.extractedMemories?.[0]?.text, 'User likes KFC popcorn chicken');
+});
+
 test('http mem0 client submits enhanced search with filters and rerank', async () => {
   let capturedBody = '';
   const fetchStub = (async (_input: string | URL | Request, init?: RequestInit) => {

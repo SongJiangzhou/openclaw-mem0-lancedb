@@ -84,6 +84,35 @@ test('capture sync writes lancedb provenance into audit records', async () => {
   }
 });
 
+test('capture sync continues when audit append fails', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'capture-sync-audit-fail-'));
+
+  try {
+    const adapter = new InMemoryMemoryAdapter();
+    const auditStore = {
+      async append() {
+        throw new Error('EACCES');
+      },
+    } as unknown as FileAuditStore;
+
+    const result = await syncCapturedMemories({
+      memories: [createExtractedMemory()],
+      userId: 'user-1',
+      runId: 'run-1',
+      scope: 'long-term',
+      eventId: 'evt-capture',
+      auditStore,
+      adapter,
+      tsEvent: '2026-03-07T12:00:00.000Z',
+    });
+
+    assert.equal(result.synced, 1);
+    assert.equal((await adapter.listMemories({ userId: 'user-1' })).length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('capture sync skips duplicate extracted memories by memory uid', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'capture-sync-'));
 
